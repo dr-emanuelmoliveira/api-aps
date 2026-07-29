@@ -450,7 +450,38 @@ INDICADORES = {
         "max_prioridade": 4
     }
 }
+# ============================================================
+# CALENDÁRIO VACINAL C2 — Boa Prática (E)
+# Fontes: Nota Metodológica C2 + Calendário Nacional de Vacinação 2026
+# ============================================================
 
+CALENDARIO_VACINAL_C2 = {
+    'penta': {
+        'nome': 'Pentavalente (Difteria, Tétano, Coqueluche, Hepatite B, Hib)',
+        'doses_esperadas': 3,
+        'idades_doses': [2, 4, 6],
+        'codigos': ['09', '17', '29', '39', '42', '43', '46', '47', '58'],
+    },
+    'polio': {
+        'nome': 'Poliomielite (VIP)',
+        'doses_esperadas': 3,
+        'idades_doses': [2, 4, 6],
+        'codigos': ['22', '29', '43', '58'],
+    },
+    'pneumo': {
+        'nome': 'Pneumocócica (VPC10/VPC13/VPC15/VPC20)',
+        'doses_esperadas': 2,
+        'idades_doses': [2, 4],
+        'codigos': ['26', '59', '106', '107'],
+    },
+    'scr': {
+        'nome': 'Sarampo, Caxumba, Rubéola (SCR/SCRV)',
+        'doses_esperadas': 2,
+        'idades_doses': [12, 15],
+        'codigos': ['24', '56'],
+        'observacao': 'Doses registradas antes dos 12 meses NÃO são consideradas válidas',
+    },
+}
 # ============================================================
 # --- 3. DETECÇÃO AUTOMÁTICA DO INDICADOR (CORRIGIDO) ---
 # Sistema: padrões decisivos (+10) > padrões regulares (+1) > exclusões (-5)
@@ -968,6 +999,57 @@ def definir_boas_praticas(codigo_indicador):
         ]
     return []
 
+def parse_doses_vacina(valor_coluna):
+    """
+    Faz o parse da coluna de vacina do CSV.
+    Estrutura esperada: "D1 - Descrição da vacina Data, D2 - Descrição da vacina Data, ..."
+    Retorna um dicionário {dose_num: descricao_com_data}.
+    """
+    if pd.isna(valor_coluna) or str(valor_coluna).strip() in ('', 'nan', 'None'):
+        return {}
+
+    texto = str(valor_coluna).strip()
+    doses_encontradas = {}
+
+    padrao_dose = re.compile(r'D(\d+)\s*[-–]\s*', re.IGNORECASE)
+    matches = list(padrao_dose.finditer(texto))
+
+    for i, match in enumerate(matches):
+        dose_num = int(match.group(1))
+        inicio = match.end()
+        fim = matches[i + 1].start() if i + 1 < len(matches) else len(texto)
+        descricao = texto[inicio:fim].strip().rstrip(',').strip()
+        doses_encontradas[dose_num] = descricao
+
+    return doses_encontradas
+
+def verificar_vacinas_c2(dados, idade_meses):
+    """
+    Verifica as vacinas faltantes para o indicador C2 com base no calendário
+    vacinal e na idade da criança.
+    Retorna lista de strings, cada uma descrevendo APENAS a vacina faltante.
+    """
+    vacinas_faltantes = []
+
+    for vacina_key, vacina_info in CALENDARIO_VACINAL_C2.items():
+        doses_esperadas = vacina_info['doses_esperadas']
+        idades_doses = vacina_info['idades_doses']
+
+        valor_vacina = dados.get(f'vac_{vacina_key}', '')
+        doses_registradas = parse_doses_vacina(valor_vacina)
+
+        for dose_num in range(1, doses_esperadas + 1):
+            idade_esperada = idades_doses[dose_num - 1]
+
+            if idade_meses >= idade_esperada:
+                if dose_num not in doses_registradas:
+                    vacinas_faltantes.append(
+                        f"{vacina_info['nome']} - D{dose_num} "
+                        f"(esperada aos {idade_esperada} meses)"
+                    )
+
+    return vacinas_faltantes
+
 # ============================================================
 # --- 7. VERIFICAÇÃO DE CRITÉRIOS ---
 # ============================================================
@@ -1283,7 +1365,7 @@ def verificar_criterios(dados, codigo_indicador):
     return pd.DataFrame(resultados)
 
 # ============================================================
-# --- 7. VERIFICAÇÃO DE CRITÉRIOS ---
+# --- 7.1 VERIFICAÇÃO DE CRITÉRIOS ---
 # Retorna 3 valores: (faltou, detalhe, nao_se_aplica)
 # Critérios "não se aplica" são excluídos do total
 # ============================================================
