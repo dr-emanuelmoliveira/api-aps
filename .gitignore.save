@@ -1,7 +1,9 @@
-çvenv/
 __pycache__/
-*.pyc
-.DS_Store
+*.py[cod]
+*$py.class
 .env
-*.csv
-
+temp_upload.csv
+static/*.png
+models/*.pkl
+output/*.csv
+*.log
