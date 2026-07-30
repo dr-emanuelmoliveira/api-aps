@@ -1,9 +1,46 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+
+# Ambiente virtual
+venv/
+env/
+.venv/
+ENV/
+
+# Variáveis de ambiente
 .env
+.env.local
+.env.production
+
+# Arquivos temporários
 temp_upload.csv
+*.tmp
+*.log
+*.bak
+
+# Saídas do sistema
+output/*.csv
 static/*.png
 models/*.pkl
-output/*.csv
-*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Railway
+.railway/
