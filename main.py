@@ -100,7 +100,6 @@ def _parse_idade(val):
 def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacientes.json"):
     """
     Exporta os números de telefone dos pacientes para um arquivo JSON.
-    Prioriza: Telefone celular > Telefone de contato > Telefone residencial.
     Formato: lista de objetos com nome e telefone (somente dígitos).
     """
     import re
@@ -108,9 +107,7 @@ def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacie
 
     if colunas_telefone is None:
         colunas_telefone = {
-            "celular": "Telefone celular",
-            "contato": "Telefone de contato",
-            "residencial": "Telefone residencial"
+            "celular": "Telefone celular"
         }
 
     pacientes = []
@@ -120,7 +117,7 @@ def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacie
 
         # Prioridade de telefones
         telefone_principal = None
-        for chave in ["celular", "contato", "residencial"]:
+        for chave in ["celular"]:
             col = colunas_telefone.get(chave)
             if col and col in row.index:
                 valor = row[col]
