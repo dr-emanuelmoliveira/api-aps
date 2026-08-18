@@ -23,6 +23,12 @@ import os
 import joblib
 import warnings
 from datetime import datetime, timedelta
+import logging
+import matplotlib
+matplotlib.use('Agg')  # non-interactive backend for servers
+import matplotlib.pyplot as plt
+from pathlib import Path
+import argparse
 # from google.colab import files  # removido - não usado na API local
 from io import BytesIO
 import re
@@ -51,20 +57,14 @@ warnings.filterwarnings('ignore')
 # --- 2. FUNÇÕES AUXILIARES ---
 # ============================================================
 
-def _normalizar_texto(texto):
-    """Normaliza texto para comparação (minúsculas, sem acentos, sem espaços extras)."""
+def _normalizar_texto(texto: Any) -> str:
     if not isinstance(texto, str):
         return ""
-    texto = texto.lower()
-    texto = re.sub(r'[áàãâä]', 'a', texto)
-    texto = re.sub(r'[éèêë]', 'e', texto)
-    texto = re.sub(r'[íìîï]', 'i', texto)
-    texto = re.sub(r'[óòõôö]', 'o', texto)
-    texto = re.sub(r'[úùûü]', 'u', texto)
-    texto = re.sub(r'[ç]', 'c', texto)
-    texto = re.sub(r'[^a-z0-9\s]', '', texto) # Remove caracteres especiais
-    return ' '.join(texto.split()) # Remove múltiplos espaços e trim
-
+    s = texto.strip().lower()
+    s = unicodedata.normalize('NFKD', s)
+    s = s.encode('ascii', 'ignore').decode('ascii')  # remove accents
+    s = re.sub(r'[^a-z0-9\s]', ' ', s)
+    return ' '.join(s.split())
 
 
 def _parse_data(data_str):
