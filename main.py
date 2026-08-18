@@ -72,19 +72,6 @@ def normalizar(texto):
     sem_acento = unicodedata.normalize('NFKD', str(texto)).encode('ASCII', 'ignore').decode('ASCII')
     return ' '.join(sem_acento.lower().split()).strip()
 
-def buscar_coluna(colunas_disponiveis, candidatos):
-    """
-    Busca uma coluna de forma flexível (case-insensitive, sem acento, parcial).
-    Retorna o nome real da coluna ou None.
-    """
-    candidatos_norm = [normalizar(c) for c in candidatos]
-    for col in colunas_disponiveis:
-        col_norm = normalizar(col)
-        for cand in candidatos_norm:
-            if cand == col_norm or cand in col_norm:
-                return col
-    return None
-
 
 def _parse_data(data_str):
     """Tenta converter string para data, suportando múltiplos formatos."""
