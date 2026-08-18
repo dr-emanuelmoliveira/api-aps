@@ -65,6 +65,73 @@ def _normalizar_texto(texto):
     texto = re.sub(r'[^a-z0-9\s]', '', texto) # Remove caracteres especiais
     return ' '.join(texto.split()) # Remove múltiplos espaços e trim
 
+def normalizar(texto):
+    """Remove acentos, converte para minúsculas, remove espaços extras."""
+    if not texto:
+        return ""
+    sem_acento = unicodedata.normalize('NFKD', str(texto)).encode('ASCII', 'ignore').decode('ASCII')
+    return ' '.join(sem_acento.lower().split()).strip()
+
+def buscar_coluna(colunas_disponiveis, candidatos):
+    """
+    Busca uma coluna de forma flexível (case-insensitive, sem acento, parcial).
+    Retorna o nome real da coluna ou None.
+    """
+    candidatos_norm = [normalizar(c) for c in candidatos]
+    for col in colunas_disponiveis:
+        col_norm = normalizar(col)
+        for cand in candidatos_norm:
+            if cand == col_norm or cand in col_norm:
+                return col
+    return None
+
+def carregar_telefones_csv(caminho_csv):
+    """
+    Lê o CSV do e-SUS (encoding Latin-1, delimitador auto-detectado).
+    Retorna um dict: {nome_normalizado: telefone}
+    """
+    if not os.path.exists(caminho_csv):
+        print(f"   ❌ Arquivo CSV não encontrado: {caminho_csv}")
+        return {}
+
+    try:
+        with open(caminho_csv, 'r', encoding='latin-1') as f:
+            amostra = f.read(2048)
+            delimitador = ';' if ';' in amostra else ','
+            f.seek(0)
+
+        reader = csv.DictReader(f, delimiter=delimitador)
+
+        # Limpa nomes de colunas (remove espaços extras)
+        colunas_originais = list(reader.fieldnames or [])
+        mapa = {}
+        for col in colunas_originais:
+            mapa[col] = col.strip()
+
+        # Busca colunas no CSV
+        colunas_limpas = [mapa[c] for c in colunas_originais]
+        col_nome = buscar_coluna(colunas_limpas, ["nome do paciente", "nome", "paciente"])
+        col_tel = buscar_coluna(colunas_limpas, ["telefone celular", "celular", "telefone"])
+
+        if not col_nome or not col_tel:
+            print(f"   ⚠️ Colunas não encontradas no CSV. Encontradas: {colunas_limpas}")
+            return {}
+
+        telefones = {}
+        for linha in reader:
+            dados = {mapa.get(k, k).strip(): v for k, v in linha.items() if k}
+            nome = (dados.get(col_nome) or "").strip()
+            tel = (dados.get(col_tel) or "").strip()
+            if nome and tel and tel not in ("-", "", "nan", "None"):
+                telefones[normalizar(nome)] = tel
+
+        print(f"   📂 CSV: {len(telefones)} telefones carregados")
+        return telefones
+
+    except Exception as e:
+        print(f"   ❌ Erro ao ler CSV: {e}")
+        return {}
+
 def _parse_data(data_str):
     """Tenta converter string para data, suportando múltiplos formatos."""
     if pd.isna(data_str) or str(data_str).strip() == '':
