@@ -26,6 +26,12 @@ from datetime import datetime, timedelta
 # from google.colab import files  # removido - não usado na API local
 from io import BytesIO
 import re
+import re
+import json
+import os
+import csv
+import unicodedata
+import requests
 
 # import matplotlib.pyplot as plt # removido - não usado na API local
 # import seaborn as sns # removido - não usado na API local
@@ -97,111 +103,32 @@ def _parse_idade(val):
     except ValueError:
         return 0
 
-def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacientes.json"):
+def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacientes.json",
+                       caminho_csv=None):
     """
     Exporta os números de telefone dos pacientes para um arquivo JSON.
     Formato: lista de objetos com nome e telefone (somente dígitos).
 
-    Correções aplicadas:
-    - Busca case-insensitive por colunas (resolve "Telefone celular" vs "Telefone Celular")
-    - Busca flexível por coluna de nome (resolve "Nome" vs "Nome do Paciente")
-    - Fallback: se o DataFrame não tiver telefones, carrega do CSV do e-SUS
+    Estratégia:
+    1. Tenta ler telefones do próprio DataFrame (se a API retornar)
+    2. Se não encontrar, lê do CSV do e-SUS e faz merge por nome
     """
-    import re
-    import json
-    import os
-    import csv
-    import unicodedata
-
-    def normalizar(texto):
-        """Remove acentos, converte para minúsculas, remove espaços extras."""
-        if not texto:
-            return ""
-        sem_acento = unicodedata.normalize('NFKD', str(texto)).encode('ASCII', 'ignore').decode('ASCII')
-        return ' '.join(sem_acento.lower().split()).strip()
-
-    def buscar_coluna(colunas_df, candidatos):
-        """
-        Busca uma coluna de forma flexível (case-insensitive, sem acento, parcial).
-        colunas_df: lista de nomes de colunas do DataFrame
-        candidatos: lista de nomes possíveis para buscar
-        Retorna o nome real da coluna ou None.
-        """
-        candidatos_norm = [normalizar(c) for c in candidatos]
-        for col in colunas_df:
-            col_norm = normalizar(col)
-            for cand in candidatos_norm:
-                if cand == col_norm or cand in col_norm:
-                    return col
-        return None
-
-    def carregar_telefones_do_csv():
-        """
-        Lê o CSV do e-SUS (encoding Latin-1, delimitador auto-detectado)
-        e retorna um dict: {nome_normalizado: telefone}
-        """
-        caminhos = [
-            "acompanhamento-condicao-saude_2026-08-18-17-11.csv",
-            "acompanhamento-condicao-saude.csv",
-        ]
-        for caminho in caminhos:
-            if not os.path.exists(caminho):
-                continue
-            try:
-                with open(caminho, 'r', encoding='latin-1') as f:
-                    amostra = f.read(2048)
-                    delimitador = ';' if ';' in amostra else ','
-                    f.seek(0)
-
-                reader = csv.DictReader(f, delimiter=delimitador)
-                colunas = [c.strip() for c in (reader.fieldnames or [])]
-
-                # Mapeia colunas originais para versão limpa
-                mapa = {}
-                for i, col_original in enumerate(reader.fieldnames or []):
-                    mapa[col_original] = colunas[i]
-
-                # Busca colunas no CSV
-                col_nome = buscar_coluna(colunas, ["nome do paciente", "nome", "paciente"])
-                col_tel = buscar_coluna(colunas, ["telefone celular", "celular", "telefone"])
-
-                if not col_nome or not col_tel:
-                    print(f"   ⚠️ CSV: colunas não encontradas. Encontradas: {colunas}")
-                    continue
-
-                telefones = {}
-                for linha in reader:
-                    dados = {mapa.get(k, k).strip(): v for k, v in linha.items() if k}
-                    nome = (dados.get(col_nome) or "").strip()
-                    tel = (dados.get(col_tel) or "").strip()
-                    if nome and tel and tel not in ("-", "", "nan", "None"):
-                        telefones[normalizar(nome)] = tel
-
-                print(f"   📂 CSV: {len(telefones)} telefones carregados de '{caminho}'")
-                return telefones
-            except Exception as e:
-                print(f"   ⚠️ Erro ao ler CSV '{caminho}': {e}")
-                continue
-        return {}
-
-    # === LÓGICA PRINCIPAL ===
-
     if colunas_telefone is None:
         colunas_telefone = {"celular": "Telefone celular"}
 
     colunas_df = list(df.columns)
 
-    # 1. Busca flexível da coluna de nome
+    # --- 1. Busca coluna de nome no DataFrame ---
     col_nome = buscar_coluna(colunas_df, [
         "nome do paciente", "nome", "nome_paciente",
         "nome completo", "paciente"
     ])
     if not col_nome:
-        print(f"   ⚠️ Coluna de nome não encontrada. Colunas: {colunas_df}")
+        print(f"   ⚠️ Coluna de nome não encontrada no DataFrame. Colunas: {colunas_df}")
         return []
     print(f"   ✅ Coluna de nome: '{col_nome}'")
 
-    # 2. Busca flexível das colunas de telefone no DataFrame
+    # --- 2. Busca colunas de telefone no DataFrame ---
     colunas_tel_encontradas = {}
     for chave, nome_esperado in colunas_telefone.items():
         col = buscar_coluna(colunas_df, [nome_esperado, chave])
@@ -210,21 +137,33 @@ def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacie
 
     tem_telefone_no_df = bool(colunas_tel_encontradas)
 
-    if tem_telefone_no_df:
-        print(f"   ✅ Coluna de telefone: {list(colunas_tel_encontradas.values())}")
-    else:
+    # --- 3. Se não há telefones no DataFrame, carrega do CSV ---
+    telefones_csv = {}
+    if not tem_telefone_no_df:
         print(f"   ⚠️ Telefone não encontrado no DataFrame. Colunas: {colunas_df}")
         print("   🔄 Carregando telefones do CSV do e-SUS...")
 
-    # 3. Carrega telefones do CSV como fallback
-    telefones_csv = {}
-    if not tem_telefone_no_df:
-        telefones_csv = carregar_telefones_do_csv()
+        if caminho_csv is None:
+            # Tenta caminhos padrão
+            caminhos_possiveis = [
+                "acompanhamento-condicao-saude_2026-08-18-17-11.csv",
+                "acompanhamento-condicao-saude.csv",
+            ]
+            for c in caminhos_possiveis:
+                if os.path.exists(c):
+                    caminho_csv = c
+                    break
+
+        if caminho_csv:
+            telefones_csv = carregar_telefones_csv(caminho_csv)
+        else:
+            print("   ❌ Nenhum arquivo CSV encontrado no diretório.")
+
         if not telefones_csv:
-            print("   ❌ Não foi possível obter telefones. Verifique se o CSV está no diretório.")
+            print("   ❌ Não foi possível obter telefones.")
             return []
 
-    # 4. Extrai pacientes
+    # --- 4. Extrai pacientes ---
     pacientes = []
     sem_telefone = 0
 
@@ -256,7 +195,7 @@ def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacie
         else:
             sem_telefone += 1
 
-    # 5. Salva
+    # --- 5. Salva ---
     with open(arquivo_saida, "w", encoding="utf-8") as f:
         json.dump(pacientes, f, ensure_ascii=False, indent=2)
 
@@ -270,6 +209,67 @@ def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacie
             print(f"      {p['nome']} → {p['telefone']}")
 
     return pacientes
+
+# ============================================================
+# MAIN
+# ============================================================
+
+if __name__ == '__main__':
+    # Caminho do CSV do e-SUS (com telefones)
+    caminho_csv = "acompanhamento-condicao-saude_2026-08-18-17-11.csv"
+
+    # URL da API (para avaliação de indicadores)
+    url_api = "https://api-aps-production.up.railway.app/avaliar"
+    codigo_indicador = "C2"  # ajuste conforme necessário
+
+    # --- ETAPA 1: Enviar CSV para a API avaliar indicadores ---
+    print("=" * 60)
+    print("📊 AVALIAÇÃO DE INDICADORES")
+    print("=" * 60)
+
+    df = pd.DataFrame()  # inicializa vazio
+
+    try:
+        with open(caminho_csv, 'rb') as csv_file:
+            resposta = requests.post(
+                url_api,
+                files={'file': (caminho_csv, csv_file, 'text/csv')}
+            )
+            resposta.raise_for_status()
+            dados_api = resposta.json()
+
+        print(f"✅ API respondeu. Indicador: {dados_api.get('indicador', 'N/A')}")
+
+        # Extrai lista de pacientes da resposta da API
+        pacientes_api = []
+        if isinstance(dados_api, list):
+            pacientes_api = dados_api
+        elif isinstance(dados_api, dict):
+            for chave in ('pacientes', 'data', 'results', 'items', 'registros'):
+                if chave in dados_api and isinstance(dados_api[chave], list):
+                    pacientes_api = dados_api[chave]
+                    break
+
+        if pacientes_api:
+            df = pd.DataFrame(pacientes_api)
+            print(f"   {len(df)} pacientes retornados pela API")
+        else:
+            print("   ⚠️ API não retornou lista de pacientes. Usando apenas o CSV.")
+
+    except Exception as e:
+        print(f"⚠️ Erro ao chamar API: {e}")
+        print("   Continuando apenas com dados do CSV...")
+
+    # Se a API não retornou pacientes, lê o CSV diretamente
+    if df.empty:
+        try:
+            with open(caminho_csv, 'r', encoding='latin-1') as f:
+                amostra = f.read(2048)
+                delimitador = ';' if ';' in amostra else ','
+            df = pd.read_csv(caminho_csv, encoding='latin-1', delimiter=delimitador)
+            print(f"   📂 CSV carregado diretamente: {len(df)} registros")
+        except Exception as e:
+            print(f"   ❌ Erro ao ler CSV: {e}")
 
 INDICADORES = {
    "C2": {
@@ -2213,14 +2213,15 @@ def main():
     print(f"   Dados preparados: {len(dados)} pacientes")
     print(f"   Colunas mapeadas: {len(mapeamento)}")
 
-    # --- EXPORTAR TELEFONES ---
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("📞 EXPORTAÇÃO DE TELEFONES")
-    print("="*60)
+    print("=" * 60)
+
     df_telefones = exportar_telefones(
         df,
         colunas_telefone={"celular": "Telefone celular"},
-        arquivo_saida=f"telefones_pacientes_{codigo_indicador}.json"
+        arquivo_saida=f"telefones_pacientes_{codigo_indicador}.json",
+        caminho_csv=caminho_csv
     )
 
     # [4/10] Verificar critérios e classificar risco
