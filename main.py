@@ -65,12 +65,6 @@ def _normalizar_texto(texto):
     texto = re.sub(r'[^a-z0-9\s]', '', texto) # Remove caracteres especiais
     return ' '.join(texto.split()) # Remove múltiplos espaços e trim
 
-def normalizar(texto):
-    """Remove acentos, converte para minúsculas, remove espaços extras."""
-    if not texto:
-        return ""
-    sem_acento = unicodedata.normalize('NFKD', str(texto)).encode('ASCII', 'ignore').decode('ASCII')
-    return ' '.join(sem_acento.lower().split()).strip()
 
 
 def _parse_data(data_str):
@@ -2054,16 +2048,6 @@ def main():
     print(f"   Dados preparados: {len(dados)} pacientes")
     print(f"   Colunas mapeadas: {len(mapeamento)}")
 
-    print("\n" + "=" * 60)
-    print("📞 EXPORTAÇÃO DE TELEFONES")
-    print("=" * 60)
-
-    df_telefones = exportar_telefones(
-        df,
-        colunas_telefone={"celular": "Telefone celular"},
-        arquivo_saida=f"telefones_pacientes_{codigo_indicador}.json",
-        caminho_csv=caminho_csv
-    )
 
     # [4/10] Verificar critérios e classificar risco
     print(f"\n[4/10] Verificando {config['num_boas_praticas']} boas práticas...")
