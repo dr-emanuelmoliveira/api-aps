@@ -106,9 +106,7 @@ def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacie
 
     if colunas_telefone is None:
         colunas_telefone = {
-            "celular": "Telefone celular",
-            "contato": "Telefone de contato",
-            "residencial": "Telefone residencial"
+            "celular": "Telefone celular"
         }
 
     telefones = []
@@ -118,7 +116,7 @@ def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacie
 
         # Prioridade de telefones
         telefone_principal = None
-        for chave in ["celular", "contato", "residencial"]:
+        for chave in ["celular"]:
             col = colunas_telefone.get(chave)
             if col and col in row.index:
                 valor = row[col]
