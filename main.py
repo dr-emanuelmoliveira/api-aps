@@ -97,6 +97,53 @@ def _parse_idade(val):
     except ValueError:
         return 0
 
+def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacientes.csv"):
+    """
+    Exporta os números de telefone dos pacientes para um CSV separado.
+    Prioriza: Telefone celular > Telefone de contato > Telefone residencial.
+    """
+    import re
+
+    if colunas_telefone is None:
+        colunas_telefone = {
+            "celular": "Telefone celular",
+            "contato": "Telefone de contato",
+            "residencial": "Telefone residencial"
+        }
+
+    telefones = []
+
+    for _, row in df.iterrows():
+        nome = row.get("Nome", "")
+
+        # Prioridade de telefones
+        telefone_principal = None
+        for chave in ["celular", "contato", "residencial"]:
+            col = colunas_telefone.get(chave)
+            if col and col in row.index:
+                valor = row[col]
+                if pd.notna(valor) and str(valor).strip() not in ["", "-", "nan", "None"]:
+                    telefone_principal = str(valor).strip()
+                    break
+
+        # Limpa mantendo apenas os dígitos
+        telefone_limpo = re.sub(r"\D", "", telefone_principal) if telefone_principal else ""
+
+        telefones.append({
+            "Nome": nome,
+            "Telefone": telefone_principal if telefone_principal else "",
+            "Telefone Limpo": telefone_limpo
+        })
+
+    df_telefones = pd.DataFrame(telefones)
+    df_telefones.to_csv(arquivo_saida, index=False, encoding="utf-8-sig")
+
+    print(f"\n📞 TELEFONES EXPORTADOS: {arquivo_saida}")
+    print(f"   Total de pacientes: {len(df_telefones)}")
+    print(f"   Com telefone: {(df_telefones['Telefone'] != '').sum()}")
+    print(f"   Sem telefone: {(df_telefones['Telefone'] == '').sum()}")
+
+    return df_telefones
 
 
 INDICADORES = {
@@ -2013,7 +2060,7 @@ def main():
     1. Carrega CSV
     2. Detecta indicador automaticamente
     3. Prepara dados
-    4. Verifica critérios e classifica risco
+    4. Exportar telefones dos pacientes e Verifica critérios e classifica risco
     5. Gera gráficos
     6. Treina modelos de ML
     7. Gera lista de busca ativa
@@ -2040,6 +2087,11 @@ def main():
     dados, mapeamento = preparar_dados(df, codigo_indicador)
     print(f"   Dados preparados: {len(dados)} pacientes")
     print(f"   Colunas mapeadas: {len(mapeamento)}")
+
+    print("\n" + "="*60)
+    print("📞 EXPORTAÇÃO DE TELEFONES")
+    print("="*60)
+    df_telefones = exportar_telefones(df, arquivo_saida=f"telefones_pacientes_{codigo_indicador}.csv")
 
     # [4/10] Verificar critérios e classificar risco
     print(f"\n[4/10] Verificando {config['num_boas_praticas']} boas práticas...")
