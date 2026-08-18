@@ -2088,10 +2088,11 @@ def main():
     print(f"   Dados preparados: {len(dados)} pacientes")
     print(f"   Colunas mapeadas: {len(mapeamento)}")
 
+    # --- EXPORTAR TELEFONES ---
     print("\n" + "="*60)
     print("📞 EXPORTAÇÃO DE TELEFONES")
     print("="*60)
-    df_telefones = exportar_telefones(df, arquivo_saida=f"telefones_pacientes_{codigo_indicador}.csv")
+    df_telefones = exportar_telefones(df, arquivo_saida=f"telefones_pacientes_{codigo_indicador}.json")
 
     # [4/10] Verificar critérios e classificar risco
     print(f"\n[4/10] Verificando {config['num_boas_praticas']} boas práticas...")
