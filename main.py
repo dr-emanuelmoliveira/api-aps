@@ -132,7 +132,6 @@ INDICADORES = {
                             "gripe", "pré-natal", "prenatal", "odontol"],
         "colunas_csv": {
             "nome": ["Nome"],
-            "telefone": ["Telefone celular"]
             "microarea": ["Microárea", "Microarea"],
             "data_nascimento": ["Data de nascimento", "Data Nascimento",
                                 "Data de Nascimento", "DtNascimento",
@@ -205,7 +204,6 @@ INDICADORES = {
                             "idade em meses"],
         "colunas_csv": {
             "nome": ["Nome"],
-            "telefone": ["Telefone celular"]
             "microarea": ["Microárea", "Microarea"],
             "data_nascimento": ["Data de nascimento", "Data Nascimento",
                                 "Data de Nascimento", "DtNascimento",
@@ -281,7 +279,6 @@ INDICADORES = {
                             "gripe", "hepatite", "sifilis", "hiv"],
         "colunas_csv": {
             "nome": ["Nome"],
-            "telefone": ["Telefone celular"]
             "microarea": ["Microárea", "Microarea"],
             "data_nascimento": ["Data de nascimento", "Data Nascimento",
                                 "Data de Nascimento", "DtNascimento",
@@ -330,7 +327,6 @@ INDICADORES = {
                             "reprodutiva", "gripe", "glicada", "hba1c"],
         "colunas_csv": {
             "nome": ["Nome"],
-            "telefone": ["Telefone celular"]
             "microarea": ["Microárea", "Microarea"],
             "data_nascimento": ["Data de nascimento", "Data Nascimento",
                                 "Data de Nascimento", "DtNascimento",
@@ -377,7 +373,6 @@ INDICADORES = {
                             "30 dias", "idade_meses", "glicada", "hba1c"],
         "colunas_csv": {
             "nome": ["Nome"],
-            "telefone": ["Telefone celular"]
             "microarea": ["Microárea", "Microarea"],
             "data_nascimento": ["Data de nascimento", "Data Nascimento",
                                 "Data de Nascimento", "DtNascimento",
@@ -429,7 +424,6 @@ INDICADORES = {
                             "gripe"],
         "colunas_csv": {
             "nome": ["Nome"],
-            "telefone": ["Telefone celular"]
             "microarea": ["Microárea", "Microarea"],
             "data_nascimento": ["Data de nascimento", "Data Nascimento",
                                 "Data de Nascimento", "DtNascimento",
@@ -785,13 +779,6 @@ def encontrar_coluna(df, candidatos):
                         if var_norm in col_norm:
                             return col_orig
     return None
-
-def _limpar_telefone(tel):
-    """Normaliza número de telefone."""
-    if pd.isna(tel) or str(tel).strip() == '':
-        return ""
-    # Remove caracteres especiais, mantém apenas números
-    return re.sub(r'\D', '', str(tel))
 
 def preparar_dados(df, codigo_indicador):
     """Prepara os dados conforme o indicador detectado."""
@@ -1370,7 +1357,6 @@ def verificar_criterios(dados, codigo_indicador):
 
         resultados.append({
             "Nome": linha["Nome"],
-            "telefone": row.get("Telefone", ""),
             "Microárea": linha["Microárea"],
             "Idade": linha.get("Idade", 0),
             "Prioridade": prioridade,
