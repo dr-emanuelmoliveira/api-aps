@@ -97,26 +97,30 @@ def _parse_idade(val):
     except ValueError:
         return 0
 
-def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacientes.csv"):
+def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacientes.json"):
     """
-    Exporta os números de telefone dos pacientes para um CSV separado.
+    Exporta os números de telefone dos pacientes para um arquivo JSON.
     Prioriza: Telefone celular > Telefone de contato > Telefone residencial.
+    Formato: lista de objetos com nome e telefone (somente dígitos).
     """
     import re
+    import json
 
     if colunas_telefone is None:
         colunas_telefone = {
-            "celular": "Telefone celular"
+            "celular": "Telefone celular",
+            "contato": "Telefone de contato",
+            "residencial": "Telefone residencial"
         }
 
-    telefones = []
+    pacientes = []
 
     for _, row in df.iterrows():
         nome = row.get("Nome", "")
 
         # Prioridade de telefones
         telefone_principal = None
-        for chave in ["celular"]:
+        for chave in ["celular", "contato", "residencial"]:
             col = colunas_telefone.get(chave)
             if col and col in row.index:
                 valor = row[col]
@@ -127,21 +131,19 @@ def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacie
         # Limpa mantendo apenas os dígitos
         telefone_limpo = re.sub(r"\D", "", telefone_principal) if telefone_principal else ""
 
-        telefones.append({
-            "Nome": nome,
-            "Telefone": telefone_principal if telefone_principal else "",
-            "Telefone Limpo": telefone_limpo
-        })
+        if nome and telefone_limpo:
+            pacientes.append({
+                "nome": nome,
+                "telefone": telefone_limpo
+            })
 
-    df_telefones = pd.DataFrame(telefones)
-    df_telefones.to_csv(arquivo_saida, index=False, encoding="utf-8-sig")
+    with open(arquivo_saida, "w", encoding="utf-8") as f:
+        json.dump(pacientes, f, ensure_ascii=False, indent=2)
 
     print(f"\n📞 TELEFONES EXPORTADOS: {arquivo_saida}")
-    print(f"   Total de pacientes: {len(df_telefones)}")
-    print(f"   Com telefone: {(df_telefones['Telefone'] != '').sum()}")
-    print(f"   Sem telefone: {(df_telefones['Telefone'] == '').sum()}")
+    print(f"   Total de pacientes com telefone: {len(pacientes)}")
 
-    return df_telefones
+    return pacientes
 
 
 INDICADORES = {
