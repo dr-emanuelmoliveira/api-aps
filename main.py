@@ -1370,6 +1370,7 @@ def verificar_criterios(dados, codigo_indicador):
 
         resultados.append({
             "Nome": linha["Nome"],
+            "telefone": row.get("Telefone", ""),
             "Microárea": linha["Microárea"],
             "Idade": linha.get("Idade", 0),
             "Prioridade": prioridade,
