@@ -101,120 +101,127 @@ def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacie
     """
     Exporta os números de telefone dos pacientes para um arquivo JSON.
     Formato: lista de objetos com nome e telefone (somente dígitos).
-    
-    Correções:
-    - Busca case-insensitive por colunas de nome e telefone
-    - Aceita variações: "Nome", "Nome do Paciente", "nome_paciente", etc.
-    - Aceita variações: "Telefone celular", "Telefone Celular", "telefone_celular", etc.
-    - Faz merge com CSV do e-SUS se o DataFrame não tiver colunas de telefone
+
+    Correções aplicadas:
+    - Busca case-insensitive por colunas (resolve "Telefone celular" vs "Telefone Celular")
+    - Busca flexível por coluna de nome (resolve "Nome" vs "Nome do Paciente")
+    - Fallback: se o DataFrame não tiver telefones, carrega do CSV do e-SUS
     """
     import re
     import json
-    import pandas as pd
+    import os
+    import csv
     import unicodedata
 
-    def normalizar_texto(texto):
-        """Remove acentos, converte para minúsculas e remove espaços extras."""
+    def normalizar(texto):
+        """Remove acentos, converte para minúsculas, remove espaços extras."""
         if not texto:
             return ""
         sem_acento = unicodedata.normalize('NFKD', str(texto)).encode('ASCII', 'ignore').decode('ASCII')
         return ' '.join(sem_acento.lower().split()).strip()
 
-    def buscar_coluna(df, candidatos):
+    def buscar_coluna(colunas_df, candidatos):
         """
-        Busca uma coluna no DataFrame de forma flexível (case-insensitive e sem acento).
-        candidatos: lista de nomes possíveis (ex: ["nome", "nome do paciente"])
-        Retorna o nome real da coluna no DataFrame, ou None se não encontrar.
+        Busca uma coluna de forma flexível (case-insensitive, sem acento, parcial).
+        colunas_df: lista de nomes de colunas do DataFrame
+        candidatos: lista de nomes possíveis para buscar
+        Retorna o nome real da coluna ou None.
         """
-        candidatos_norm = {normalizar_texto(c) for c in candidatos}
-        for col in df.columns:
-            col_norm = normalizar_texto(col)
-            if col_norm in candidatos_norm:
-                return col
-            # Busca parcial: se a coluna contém algum dos candidatos
+        candidatos_norm = [normalizar(c) for c in candidatos]
+        for col in colunas_df:
+            col_norm = normalizar(col)
             for cand in candidatos_norm:
-                if cand in col_norm:
+                if cand == col_norm or cand in col_norm:
                     return col
         return None
 
-    def carregar_telefones_csv(caminho_csv):
+    def carregar_telefones_do_csv():
         """
-        Lê o CSV do e-SUS (encoding Latin-1) e retorna um dict:
-        {nome_normalizado: telefone}
+        Lê o CSV do e-SUS (encoding Latin-1, delimitador auto-detectado)
+        e retorna um dict: {nome_normalizado: telefone}
         """
-        telefones = {}
-        try:
-            # Detecta delimitador
-            with open(caminho_csv, 'r', encoding='latin-1') as f:
-                amostra = f.read(2048)
-                delimitador = ';' if ';' in amostra else ','
-            
-            df_csv = pd.read_csv(caminho_csv, encoding='latin-1', delimiter=delimitador)
-            
-            col_nome_csv = buscar_coluna(df_csv, ["nome do paciente", "nome", "paciente"])
-            col_tel_csv = buscar_coluna(df_csv, ["telefone celular", "celular", "telefone"])
-            
-            if col_nome_csv and col_tel_csv:
-                for _, row in df_csv.iterrows():
-                    nome = str(row[col_nome_csv]).strip()
-                    tel = str(row[col_tel_csv]).strip()
-                    if nome and tel and tel not in ("-", "", "nan", "None"):
-                        telefones[normalizar_texto(nome)] = tel
-                print(f"   📂 CSV: {len(telefones)} telefones carregados de {caminho_csv}")
-            else:
-                print(f"   ⚠️ CSV: colunas não encontradas. Colunas disponíveis: {list(df_csv.columns)}")
-        except Exception as e:
-            print(f"   ⚠️ Erro ao ler CSV: {e}")
-        return telefones
-
-    # === INÍCIO DA LÓGICA PRINCIPAL ===
-
-    if colunas_telefone is None:
-        colunas_telefone = {
-            "celular": "Telefone celular"
-        }
-
-    # 1. Busca flexível da coluna de nome
-    col_nome = buscar_coluna(df, [
-        "nome do paciente", "nome", "nome_paciente",
-        "nome completo", "paciente", "nomecompleto"
-    ])
-    if not col_nome:
-        print("   ⚠️ Coluna de nome não encontrada no DataFrame!")
-        print(f"   Colunas disponíveis: {list(df.columns)}")
-        return []
-    print(f"   ✅ Coluna de nome encontrada: '{col_nome}'")
-
-    # 2. Busca flexível das colunas de telefone
-    colunas_telefone_encontradas = {}
-    for chave, nome_esperado in colunas_telefone.items():
-        col = buscar_coluna(df, [nome_esperado, chave])
-        if col:
-            colunas_telefone_encontradas[chave] = col
-
-    # 3. Se não encontrou telefones no DataFrame, tenta carregar do CSV
-    telefones_csv = {}
-    if not colunas_telefone_encontradas:
-        print("   ⚠️ Nenhuma coluna de telefone encontrada no DataFrame.")
-        print(f"   Colunas disponíveis: {list(df.columns)}")
-        print("   🔄 Tentando carregar telefones do CSV do e-SUS...")
-
-        # Tenta vários caminhos possíveis do CSV
-        caminhos_csv = [
+        caminhos = [
             "acompanhamento-condicao-saude_2026-08-18-17-11.csv",
             "acompanhamento-condicao-saude.csv",
-            "telefones_pacientes.csv",
         ]
-        for caminho in caminhos_csv:
-            import os
-            if os.path.exists(caminho):
-                telefones_csv = carregar_telefones_csv(caminho)
-                if telefones_csv:
-                    break
+        for caminho in caminhos:
+            if not os.path.exists(caminho):
+                continue
+            try:
+                with open(caminho, 'r', encoding='latin-1') as f:
+                    amostra = f.read(2048)
+                    delimitador = ';' if ';' in amostra else ','
+                    f.seek(0)
 
+                reader = csv.DictReader(f, delimiter=delimitador)
+                colunas = [c.strip() for c in (reader.fieldnames or [])]
+
+                # Mapeia colunas originais para versão limpa
+                mapa = {}
+                for i, col_original in enumerate(reader.fieldnames or []):
+                    mapa[col_original] = colunas[i]
+
+                # Busca colunas no CSV
+                col_nome = buscar_coluna(colunas, ["nome do paciente", "nome", "paciente"])
+                col_tel = buscar_coluna(colunas, ["telefone celular", "celular", "telefone"])
+
+                if not col_nome or not col_tel:
+                    print(f"   ⚠️ CSV: colunas não encontradas. Encontradas: {colunas}")
+                    continue
+
+                telefones = {}
+                for linha in reader:
+                    dados = {mapa.get(k, k).strip(): v for k, v in linha.items() if k}
+                    nome = (dados.get(col_nome) or "").strip()
+                    tel = (dados.get(col_tel) or "").strip()
+                    if nome and tel and tel not in ("-", "", "nan", "None"):
+                        telefones[normalizar(nome)] = tel
+
+                print(f"   📂 CSV: {len(telefones)} telefones carregados de '{caminho}'")
+                return telefones
+            except Exception as e:
+                print(f"   ⚠️ Erro ao ler CSV '{caminho}': {e}")
+                continue
+        return {}
+
+    # === LÓGICA PRINCIPAL ===
+
+    if colunas_telefone is None:
+        colunas_telefone = {"celular": "Telefone celular"}
+
+    colunas_df = list(df.columns)
+
+    # 1. Busca flexível da coluna de nome
+    col_nome = buscar_coluna(colunas_df, [
+        "nome do paciente", "nome", "nome_paciente",
+        "nome completo", "paciente"
+    ])
+    if not col_nome:
+        print(f"   ⚠️ Coluna de nome não encontrada. Colunas: {colunas_df}")
+        return []
+    print(f"   ✅ Coluna de nome: '{col_nome}'")
+
+    # 2. Busca flexível das colunas de telefone no DataFrame
+    colunas_tel_encontradas = {}
+    for chave, nome_esperado in colunas_telefone.items():
+        col = buscar_coluna(colunas_df, [nome_esperado, chave])
+        if col:
+            colunas_tel_encontradas[chave] = col
+
+    tem_telefone_no_df = bool(colunas_tel_encontradas)
+
+    if tem_telefone_no_df:
+        print(f"   ✅ Coluna de telefone: {list(colunas_tel_encontradas.values())}")
+    else:
+        print(f"   ⚠️ Telefone não encontrado no DataFrame. Colunas: {colunas_df}")
+        print("   🔄 Carregando telefones do CSV do e-SUS...")
+
+    # 3. Carrega telefones do CSV como fallback
+    telefones_csv = {}
+    if not tem_telefone_no_df:
+        telefones_csv = carregar_telefones_do_csv()
         if not telefones_csv:
-            print("   ❌ Não foi possível obter telefones nem do DataFrame nem do CSV.")
-            print("   Verifique se o arquivo CSV está no mesmo diretório do script.")
+            print("   ❌ Não foi possível obter telefones. Verifique se o CSV está no diretório.")
             return []
 
     # 4. Extrai pacientes
@@ -223,24 +230,22 @@ def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacie
 
     for _, row in df.iterrows():
         nome = str(row.get(col_nome, "")).strip()
-
         telefone_principal = None
 
-        if colunas_telefone_encontradas:
-            # Telefone vem do próprio DataFrame
+        if tem_telefone_no_df:
+            # Telefone do próprio DataFrame
             for chave in ["celular", "contato", "residencial"]:
-                col = colunas_telefone_encontradas.get(chave)
+                col = colunas_tel_encontradas.get(chave)
                 if col and col in row.index:
                     valor = row[col]
                     if pd.notna(valor) and str(valor).strip() not in ["", "-", "nan", "None"]:
                         telefone_principal = str(valor).strip()
                         break
         else:
-            # Telefone vem do CSV (merge por nome)
-            nome_norm = normalizar_texto(nome)
-            telefone_principal = telefones_csv.get(nome_norm)
+            # Telefone do CSV (merge por nome)
+            telefone_principal = telefones_csv.get(normalizar(nome))
 
-        # Limpa mantendo apenas os dígitos
+        # Limpa mantendo apenas dígitos
         telefone_limpo = re.sub(r"\D", "", telefone_principal) if telefone_principal else ""
 
         if nome and telefone_limpo:
@@ -251,23 +256,20 @@ def exportar_telefones(df, colunas_telefone=None, arquivo_saida="telefones_pacie
         else:
             sem_telefone += 1
 
-    # 5. Salva resultado
+    # 5. Salva
     with open(arquivo_saida, "w", encoding="utf-8") as f:
         json.dump(pacientes, f, ensure_ascii=False, indent=2)
 
     print(f"\n📞 TELEFONES EXPORTADOS: {arquivo_saida}")
-    print(f"   ✅ Total de pacientes com telefone: {len(pacientes)}")
+    print(f"   ✅ Total com telefone: {len(pacientes)}")
     if sem_telefone:
-        print(f"   ⚠️ Pacientes sem telefone: {sem_telefone}")
-
-    # Preview
+        print(f"   ⚠️ Sem telefone: {sem_telefone}")
     if pacientes:
-        print("\n   📋 Preview (primeiros 5):")
+        print("   📋 Preview:")
         for p in pacientes[:5]:
             print(f"      {p['nome']} → {p['telefone']}")
 
     return pacientes
-
 
 INDICADORES = {
    "C2": {
