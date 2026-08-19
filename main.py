@@ -926,10 +926,10 @@ def definir_boas_praticas(codigo_indicador):
     elif codigo_indicador == "C4":
         return [
             {"label": "Consulta médica/enfermagem",
-             "chave": "data_consulta", "tipo": "data_ou_meses", "max_dias": 180,
+             "chave": "data_consulta", "tipo": "data_ou_meses", "max_dias": 190,
              "descricao_prazo": "Últimos 6 meses (180 dias)"},
             {"label": "Aferição de pressão arterial",
-             "chave": "data_pa", "tipo": "data", "max_dias": 180,
+             "chave": "data_pa", "tipo": "data", "max_dias": 190,
              "descricao_prazo": "Últimos 6 meses (180 dias)"},
             {"label": "Antropometria (peso e altura)",
              "chave": "data_antro", "tipo": "data", "max_dias": 365,
@@ -947,10 +947,10 @@ def definir_boas_praticas(codigo_indicador):
     elif codigo_indicador == "C5":
         return [
             {"label": "Consulta médica/enfermagem",
-             "chave": "data_consulta", "tipo": "data_ou_meses", "max_dias": 180,
+             "chave": "data_consulta", "tipo": "data_ou_meses", "max_dias": 190,
              "descricao_prazo": "Últimos 6 meses (180 dias)"},
             {"label": "Aferição de pressão arterial",
-             "chave": "data_pa", "tipo": "data", "max_dias": 180,
+             "chave": "data_pa", "tipo": "data", "max_dias": 190,
              "descricao_prazo": "Últimos 6 meses (180 dias)"},
             {"label": "Antropometria (peso e altura)",
              "chave": "data_antro", "tipo": "data", "max_dias": 365,
