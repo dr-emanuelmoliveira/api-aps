@@ -97,13 +97,35 @@ def _parse_idade(val):
     except ValueError:
         return 0
 
-def _obter_dias_de_colunas(linha, col_dias=None, col_meses=None):
+def _obter_dias_de_colunas(linha, chave, colunas_disponiveis):
     """
-    Extrai o número de dias a partir de colunas de Dias e/ou Meses.
-    Prioriza a coluna de Dias (mais precisa). Se ausente, converte Meses → Dias (×30).
-    Retorna (dias: int | None, origem: str | None).
+    Resolve automaticamente as colunas de Dias e Meses a partir de 'chave',
+    extrai o valor e retorna (dias: int | None, origem: str | None).
+    Prioriza a coluna de Dias. Faz fallback para Meses (×30).
     """
-    # 1) Tenta a coluna de Dias primeiro
+    # --- descobre col_dias e col_meses a partir da chave ---
+    col_dias = None
+    col_meses = None
+    chave_lower = chave.lower()
+    colunas_lower = {c.lower(): c for c in colunas_disponiveis}
+
+    if 'meses' in chave_lower:
+        col_meses = chave if chave in colunas_disponiveis else colunas_lower.get(chave_lower)
+        # procura a correspondente em "dias" substituindo a palavra
+        candidato_dias = chave_lower.replace('meses', 'dias')
+        col_dias = colunas_lower.get(candidato_dias)
+
+    elif 'dias' in chave_lower:
+        col_dias = chave if chave in colunas_disponiveis else colunas_lower.get(chave_lower)
+        # procura a correspondente em "meses" substituindo a palavra
+        candidato_meses = chave_lower.replace('dias', 'meses')
+        col_meses = colunas_lower.get(candidato_meses)
+
+    else:
+        # chave genérica — tenta usá-la como coluna de meses
+        col_meses = chave if chave in colunas_disponiveis else None
+
+    # --- tenta extrair valor da coluna de Dias primeiro ---
     if col_dias and col_dias in linha.index:
         val = linha[col_dias]
         if not pd.isna(val) and str(val).strip() != '':
@@ -112,7 +134,7 @@ def _obter_dias_de_colunas(linha, col_dias=None, col_meses=None):
             except (ValueError, TypeError):
                 pass  # valor inválido → cai para Meses
 
-    # 2) Fallback: coluna de Meses → converte para dias
+    # --- fallback: coluna de Meses → converte para dias ---
     if col_meses and col_meses in linha.index:
         val = linha[col_meses]
         if not pd.isna(val) and str(val).strip() != '':
@@ -123,7 +145,6 @@ def _obter_dias_de_colunas(linha, col_dias=None, col_meses=None):
                 pass
 
     return None, None
-
 
 
 INDICADORES = {
