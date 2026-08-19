@@ -23,21 +23,9 @@ import os
 import joblib
 import warnings
 from datetime import datetime, timedelta
-import logging
-import matplotlib
-matplotlib.use('Agg')  # non-interactive backend for servers
-import matplotlib.pyplot as plt
-from pathlib import Path
-import argparse
 # from google.colab import files  # removido - não usado na API local
 from io import BytesIO
 import re
-import re
-import json
-import os
-import csv
-import unicodedata
-import requests
 
 # import matplotlib.pyplot as plt # removido - não usado na API local
 # import seaborn as sns # removido - não usado na API local
@@ -70,8 +58,6 @@ def _normalizar_texto(texto):
     texto = re.sub(r'[ç]', 'c', texto)
     texto = re.sub(r'[^a-z0-9\s]', '', texto) # Remove caracteres especiais
     return ' '.join(texto.split()) # Remove múltiplos espaços e trim
-
-
 
 def _parse_data(data_str):
     """Tenta converter string para data, suportando múltiplos formatos."""
@@ -110,6 +96,7 @@ def _parse_idade(val):
         return idade if 0 < idade < 130 else 0
     except ValueError:
         return 0
+
 
 
 INDICADORES = {
@@ -849,7 +836,6 @@ def preparar_dados(df, codigo_indicador):
     print(f"\n   Colunas mapeadas: {len(colunas_mapeadas)}")
     print(f"   Amostra de idades: {dados['Idade'].head(10).tolist()}")
     return dados, colunas_mapeadas
-
 
 # ============================================================
 # --- 6. DEFINIÇÃO DAS BOAS PRÁTICAS POR INDICADOR ---
@@ -2027,7 +2013,7 @@ def main():
     1. Carrega CSV
     2. Detecta indicador automaticamente
     3. Prepara dados
-    4. Exportar telefones dos pacientes e Verifica critérios e classifica risco
+    4. Verifica critérios e classifica risco
     5. Gera gráficos
     6. Treina modelos de ML
     7. Gera lista de busca ativa
@@ -2054,7 +2040,6 @@ def main():
     dados, mapeamento = preparar_dados(df, codigo_indicador)
     print(f"   Dados preparados: {len(dados)} pacientes")
     print(f"   Colunas mapeadas: {len(mapeamento)}")
-
 
     # [4/10] Verificar critérios e classificar risco
     print(f"\n[4/10] Verificando {config['num_boas_praticas']} boas práticas...")
