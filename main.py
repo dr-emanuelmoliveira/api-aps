@@ -1198,16 +1198,38 @@ def _verificar_criterio_detalhado(linha, pratica, dados, codigo_indicador):
                 return True, (f"{label} — Data inválida ou ilegível: '{val}'. "
                               f"Prazo: {pratica['descricao_prazo']}"), False
 
-    # DATA OU MESES
+    #Data ou Meses 
     elif tipo == "data_ou_meses":
-        if chave not in dados.columns:
-            return True, f"{label} — coluna não encontrada no CSV", False
+        # --- descobre quais colunas existem para esta métrica ---
+        col_dias = None
+        col_meses = None
+        if chave in dados.columns:
+            # Se a própria chave é uma coluna de Meses, procura a correspondente em Dias
+            if 'meses' in chave.lower():
+                col_meses = chave
+                col_dias = chave.lower().replace('meses', 'dias')
+                # valida se a coluna de dias realmente existe no DataFrame
+                col_dias = col_dias if col_dias in dados.columns else None
+            elif 'dias' in chave.lower():
+                col_dias = chave
+                col_meses = chave.lower().replace('dias', 'meses')
+                col_meses = col_meses if col_meses in dados.columns else None
+            else:
+                # chave genérica — tenta usá-la como coluna de meses
+                col_meses = chave
+
+            if not col_dias and not col_meses:
+                return True, f"{label} — coluna não encontrada no CSV", False
+
         val = linha[chave]
         if pd.isna(val) or str(val).strip() == '':
             return True, (f"{label} — NENHUM registro encontrado. "
-                          f"Prazo: {pratica['descricao_prazo']}"), False
+                            f"Prazo: {pratica['descricao_prazo']}"), False
+
+        # --- tenta extrair como data primeiro (se vier como string de data) ---
         data = _parse_data(val)
         max_dias = pratica["max_dias"]
+
         if data is not None and not pd.isna(data):
             dias = (hoje - data).days
             if dias > max_dias:
@@ -1218,21 +1240,41 @@ def _verificar_criterio_detalhado(linha, pratica, dados, codigo_indicador):
             else:
                 return False, (f"{label} — Adequado. Última data: "
                                f"{data.strftime('%d/%m/%Y')} ({dias} dias atrás)"), False
-        else:
-            try:
-                meses = float(str(val).replace(',', '.'))
-                dias_calculados = int(meses * 30)
-                if dias_calculados > max_dias:
+
+        # --- não é data: extrai dias das colunas Dias/Meses ---
+        dias, origem = _obter_dias_de_colunas(linha, col_dias, col_meses)
+
+        if dias is not None:
+            if dias > max_dias:
+                if origem == 'meses':
+                    meses = dias / 30
                     return True, (f"{label} — Último registro há {meses:.1f} meses "
-                                  f"({dias_calculados} dias). Limite: {max_dias} dias. "
+                                  f"({dias} dias). Limite: {max_dias} dias. "
                                   f"Prazo: {pratica['descricao_prazo']}"), False
                 else:
-                    return False, (f"{label} — Adequado ({meses:.1f} meses / "
-                                   f"{dias_calculados} dias atrás)"), False
-            except (ValueError, TypeError):
-                return True, (f"{label} — Formato inválido: '{val}'. "
-                              f"Prazo: {pratica['descricao_prazo']}"), False
+                    return True, (f"{label} — Último registro há {dias} dias. "
+                                  f"Limite: {max_dias} dias. "
+                                  f"Prazo: {pratica['descricao_prazo']}"), False
+                else:
+                    if origem == 'meses':
+                        meses = dias / 30
+                        return False, (f"{label} — Adequado ({meses:.1f} meses / "
+                                       f"{dias} dias atrás)"), False
+                else:
+                    return False, (f"{label} — Adequado ({dias} dias atrás)"), False
 
+        else:
+            return True, (f"{label} — Formato inválido: '{val}'. "
+                          f"Prazo: {pratica['descricao_prazo']}"), False
+
+
+
+        
+
+    
+
+
+    
     # VACINAS MÚLTIPLAS
     elif tipo == "vacinas_multiplas":
         faltantes, ok = [], []
