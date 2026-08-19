@@ -97,6 +97,33 @@ def _parse_idade(val):
     except ValueError:
         return 0
 
+def _obter_dias_de_colunas(linha, col_dias=None, col_meses=None):
+    """
+    Extrai o número de dias a partir de colunas de Dias e/ou Meses.
+    Prioriza a coluna de Dias (mais precisa). Se ausente, converte Meses → Dias (×30).
+    Retorna (dias: int | None, origem: str | None).
+    """
+    # 1) Tenta a coluna de Dias primeiro
+    if col_dias and col_dias in linha.index:
+        val = linha[col_dias]
+        if not pd.isna(val) and str(val).strip() != '':
+            try:
+                return int(float(str(val).replace(',', '.'))), 'dias'
+            except (ValueError, TypeError):
+                pass  # valor inválido → cai para Meses
+
+    # 2) Fallback: coluna de Meses → converte para dias
+    if col_meses and col_meses in linha.index:
+        val = linha[col_meses]
+        if not pd.isna(val) and str(val).strip() != '':
+            try:
+                meses = float(str(val).replace(',', '.'))
+                return int(meses * 30), 'meses'
+            except (ValueError, TypeError):
+                pass
+
+    return None, None
+
 
 
 INDICADORES = {
@@ -926,10 +953,10 @@ def definir_boas_praticas(codigo_indicador):
     elif codigo_indicador == "C4":
         return [
             {"label": "Consulta médica/enfermagem",
-             "chave": "data_consulta", "tipo": "data_ou_meses", "max_dias": 190,
+             "chave": "data_consulta", "tipo": "data_ou_meses", "max_dias": 180,
              "descricao_prazo": "Últimos 6 meses (180 dias)"},
             {"label": "Aferição de pressão arterial",
-             "chave": "data_pa", "tipo": "data", "max_dias": 190,
+             "chave": "data_pa", "tipo": "data", "max_dias": 180,
              "descricao_prazo": "Últimos 6 meses (180 dias)"},
             {"label": "Antropometria (peso e altura)",
              "chave": "data_antro", "tipo": "data", "max_dias": 365,
@@ -947,10 +974,10 @@ def definir_boas_praticas(codigo_indicador):
     elif codigo_indicador == "C5":
         return [
             {"label": "Consulta médica/enfermagem",
-             "chave": "data_consulta", "tipo": "data_ou_meses", "max_dias": 190,
+             "chave": "data_consulta", "tipo": "data_ou_meses", "max_dias": 180,
              "descricao_prazo": "Últimos 6 meses (180 dias)"},
             {"label": "Aferição de pressão arterial",
-             "chave": "data_pa", "tipo": "data", "max_dias": 190,
+             "chave": "data_pa", "tipo": "data", "max_dias": 180,
              "descricao_prazo": "Últimos 6 meses (180 dias)"},
             {"label": "Antropometria (peso e altura)",
              "chave": "data_antro", "tipo": "data", "max_dias": 365,
