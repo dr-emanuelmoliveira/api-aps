@@ -57,14 +57,20 @@ warnings.filterwarnings('ignore')
 # --- 2. FUNÇÕES AUXILIARES ---
 # ============================================================
 
-def _normalizar_texto(texto: Any) -> str:
+def _normalizar_texto(texto):
+    """Normaliza texto para comparação (minúsculas, sem acentos, sem espaços extras)."""
     if not isinstance(texto, str):
         return ""
-    s = texto.strip().lower()
-    s = unicodedata.normalize('NFKD', s)
-    s = s.encode('ascii', 'ignore').decode('ascii')  # remove accents
-    s = re.sub(r'[^a-z0-9\s]', ' ', s)
-    return ' '.join(s.split())
+    texto = texto.lower()
+    texto = re.sub(r'[áàãâä]', 'a', texto)
+    texto = re.sub(r'[éèêë]', 'e', texto)
+    texto = re.sub(r'[íìîï]', 'i', texto)
+    texto = re.sub(r'[óòõôö]', 'o', texto)
+    texto = re.sub(r'[úùûü]', 'u', texto)
+    texto = re.sub(r'[ç]', 'c', texto)
+    texto = re.sub(r'[^a-z0-9\s]', '', texto) # Remove caracteres especiais
+    return ' '.join(texto.split()) # Remove múltiplos espaços e trim
+
 
 
 def _parse_data(data_str):
