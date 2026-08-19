@@ -1276,10 +1276,10 @@ def _verificar_criterio_detalhado(linha, pratica, dados, codigo_indicador):
                     return True, (f"{label} — Último registro há {dias} dias. "
                                   f"Limite: {max_dias} dias. "
                                   f"Prazo: {pratica['descricao_prazo']}"), False
-                else:
-                    if origem == 'meses':
-                        meses = dias / 30
-                        return False, (f"{label} — Adequado ({meses:.1f} meses / "
+            else:
+                if origem == 'meses':
+                    meses = dias / 30
+                    return False, (f"{label} — Adequado ({meses:.1f} meses / "
                                        f"{dias} dias atrás)"), False
                 else:
                     return False, (f"{label} — Adequado ({dias} dias atrás)"), False
