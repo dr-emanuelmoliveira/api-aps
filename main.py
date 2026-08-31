@@ -101,49 +101,62 @@ def _obter_dias_de_colunas(linha, col_dias, col_meses):
     """
     Extrai o número de dias a partir das colunas de data da linha.
     Retorna (dias, origem) onde origem indica qual coluna foi usada.
-    CORREÇÃO: apenas adiciona guarda contra chave None.
+    CORREÇÃO 1: trata chaves None (colunas sem cabeçalho).
+    CORREÇÃO 2: usa correspondência parcial (substring) em vez de exata,
+                para detectar colunas como "dias_ultima_consulta" ao buscar "dias".
     """
     dias = None
     origem = None
 
+    # Normalizar listas de colunas — remover None e não-string
+    col_dias_limpo = []
+    if col_dias:
+        for c in col_dias:
+            if c is not None and isinstance(c, str) and c.strip() != '':
+                col_dias_limpo.append(c.lower().strip())
+
+    col_meses_limpo = []
+    if col_meses:
+        for c in col_meses:
+            if c is not None and isinstance(c, str) and c.strip() != '':
+                col_meses_limpo.append(c.lower().strip())
+
     for chave in linha.keys():
-        # CORREÇÃO: pular chaves None (colunas sem cabeçalho no CSV)
+        # CORREÇÃO: pular chaves None (colunas sem cabeçalho)
         if chave is None or not isinstance(chave, str):
             continue
 
-        chave_lower = chave.lower()
+        chave_lower = chave.lower().strip()
+        if chave_lower == '':
+            continue
 
-        # Verificar colunas de dias (substring matching — igual ao original)
-        if col_dias:
-            for col_busca in col_dias:
-                if col_busca is None or not isinstance(col_busca, str):
-                    continue
-                if col_busca.lower() in chave_lower:
-                    valor = linha[chave]
-                    if valor is not None and str(valor).strip() != '' and str(valor).strip().lower() != 'nan':
-                        try:
-                            dias = float(str(valor).replace(',', '.'))
-                            origem = chave
-                        except (ValueError, TypeError):
-                            pass
-                    break
+        # Correspondência PARCIAL: verificar se a chave contém algum dos termos de col_dias
+        # ou se algum dos termos contém a chave (bidirecional)
+        for termo in col_dias_limpo:
+            if termo in chave_lower or chave_lower in termo:
+                valor = linha[chave]
+                if valor is not None and str(valor).strip() != '' and str(valor).strip().lower() != 'nan':
+                    try:
+                        dias = float(str(valor).replace(',', '.'))
+                        origem = chave
+                        break
+                    except (ValueError, TypeError):
+                        pass
+        if dias is not None:
+            break
 
-        # Verificar colunas de meses (substring matching — igual ao original)
-        if col_meses and dias is None:
-            for col_busca in col_meses:
-                if col_busca is None or not isinstance(col_busca, str):
-                    continue
-                if col_busca.lower() in chave_lower:
-                    valor = linha[chave]
-                    if valor is not None and str(valor).strip() != '' and str(valor).strip().lower() != 'nan':
-                        try:
-                            meses = float(str(valor).replace(',', '.'))
-                            dias = meses * 30
-                            origem = chave
-                        except (ValueError, TypeError):
-                            pass
-                    break
-
+        # Correspondência PARCIAL para colunas de meses
+        for termo in col_meses_limpo:
+            if termo in chave_lower or chave_lower in termo:
+                valor = linha[chave]
+                if valor is not None and str(valor).strip() != '' and str(valor).strip().lower() != 'nan':
+                    try:
+                        meses = float(str(valor).replace(',', '.'))
+                        dias = meses * 30
+                        origem = chave
+                        break
+                    except (ValueError, TypeError):
+                        pass
         if dias is not None:
             break
 
