@@ -700,62 +700,71 @@ def detectar_delimitador(caminho_ou_buffer, skiprows):
                 break
     return ';'
 
-def carregar_csv():
-    """Faz upload e carrega o CSV, detectando skiprows, delimitador e encoding."""
-    print("\n📁 Faça upload do arquivo .csv do e-SUS APS:")
-    uploaded = files.upload()
-    nome_arquivo = list(uploaded.keys())[0]
+def carregar_csv(caminho):
+    """
+    Carrega CSV com detecção automática de delimiter, skiprows e encoding.
+    CORREÇÃO: tenta múltiplos encodings (utf-8, latin-1, cp1252) e
+    sanitiza colunas sem cabeçalho (None) após carregar.
+    """
+    import pandas as pd
 
-    # 1. Detectar skiprows
-    skiprows = detectar_skiprows(nome_arquivo)
-
-    # 2. Detectar delimitador
-    delimitador = detectar_delimitador(nome_arquivo, skiprows)
-
-    # 3. Tentar múltiplos encodings (latin-1 primeiro para e-SUS)
-    encodings = ['latin-1', 'cp1252', 'utf-8', 'utf-8-sig', 'iso-8859-1']
-
+    # CORREÇÃO: tentar múltiplos encodings
+    encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
     df = None
+
     for enc in encodings:
         try:
+            with open(caminho, 'r', encoding=enc) as f:
+                primeiras_linhas = [next(f) for _ in range(10)]
+
+            # Detectar delimitador
+            primeira_linha = primeiras_linhas[0]
+            if primeira_linha.count(';') > primeira_linha.count(','):
+                delimitador = ';'
+            else:
+                delimitador = ','
+
+            # Detectar skiprows
+            skip = 0
+            for i, linha in enumerate(primeiras_linhas):
+                partes = linha.split(delimitador)
+                if len(partes) > 2:
+                    skip = i
+                    break
+
             df = pd.read_csv(
-                nome_arquivo,
+                caminho,
                 sep=delimitador,
-                skiprows=skiprows,
-                encoding=enc,
-                on_bad_lines='skip'
+                skiprows=skip,
+                encoding=enc
             )
-            print(f"✅ Arquivo carregado: {nome_arquivo}")
-            print(f"   Encoding: {enc}")
-            print(f"   Delimitador: '{delimitador}'")
-            print(f"   Skiprows: {skiprows}")
-            print(f"   Linhas: {len(df)} | Colunas: {len(df.columns)}")
-            return df, nome_arquivo
+            break
+
         except UnicodeDecodeError:
             continue
-        except Exception as e:
+        except StopIteration:
+            continue
+        except Exception:
             continue
 
-    # Se todos falharem, tentar com engine='python' (mais tolerante)
     if df is None:
-        try:
-            df = pd.read_csv(
-                nome_arquivo,
-                sep=delimitador,
-                skiprows=skiprows,
-                encoding='latin-1',
-                on_bad_lines='skip',
-                engine='python'
-            )
-            print(f"✅ Arquivo carregado (engine python): {nome_arquivo}")
-            print(f"   Linhas: {len(df)} | Colunas: {len(df.columns)}")
-            return df, nome_arquivo
-        except Exception as e:
-            raise ValueError(
-                f"Não foi possível carregar o CSV. Último erro: {e}"
-            )
+        raise ValueError(f"Não foi possível ler o CSV com nenhum encoding: {caminho}")
 
-    return df, nome_arquivo
+    # CORREÇÃO: remover colunas com cabeçalho None
+    df = df.loc[:, df.columns.notna()]
+
+    # CORREÇÃO: renomear colunas None ou NaN para string identificável
+    novas_colunas = []
+    for i, col in enumerate(df.columns):
+        if col is None:
+            novas_colunas.append(f"coluna_sem_nome_{i}")
+        elif isinstance(col, float) and pd.isna(col):
+            novas_colunas.append(f"coluna_sem_nome_{i}")
+        else:
+            novas_colunas.append(str(col).strip())
+    df.columns = novas_colunas
+
+    return df
 
 # ============================================================
 # --- 5. PREPARAÇÃO DOS DADOS ---
