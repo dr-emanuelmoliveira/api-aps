@@ -1272,7 +1272,10 @@ def _verificar_criterio_detalhado(linha, pratica, dados, codigo_indicador):
             else:
                 return False, (f"{label} — Adequado. Última data: "
                                f"{data.strftime('%d/%m/%Y')} ({dias} dias atrás)"), False
-
+        if col_dias is not None:
+            col_dias = [c for c in col_dias if c is not None and isinstance(c, str)]
+        if col_meses is not None:
+            col_meses = [c for c in col_meses if c is not None and isinstance(c, str)]
         # --- não é data: extrai dias das colunas Dias/Meses ---
         dias, origem = _obter_dias_de_colunas(linha, col_dias, col_meses)
 
