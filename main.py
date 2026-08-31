@@ -1412,6 +1412,15 @@ def verificar_criterios(dados, codigo_indicador):
     Avalia cada paciente em relação às boas práticas do indicador
     e calcula um score de completude e um nível de prioridade.
     """
+    # CORREÇÃO: sanitizar colunas None antes de processar
+    novas_colunas = []
+    for i, col in enumerate(dados.columns):
+        if col is None or (isinstance(col, float) and pd.isna(col)):
+            novas_colunas.append(f"coluna_sem_nome_{i}")
+        else:
+            novas_colunas.append(str(col).strip())
+    dados.columns = novas_colunas
+    
     # CORREÇÃO: garantir que nomes de colunas sejam strings válidas
     novas_colunas = []
     for i, col in enumerate(dados.columns):
