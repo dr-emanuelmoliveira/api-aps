@@ -1258,16 +1258,6 @@ def _verificar_criterio_detalhado(linha, pratica, dados, codigo_indicador):
             else:
                 return False, (f"{label} — Adequado. Última data: "
                                f"{data.strftime('%d/%m/%Y')} ({dias} dias atrás)"), False
-        # CORREÇÃO: validar colunas antes de chamar _obter_dias_de_colunas
-        if col_dias is not None:
-            col_dias = [c for c in col_dias if c is not None and isinstance(c, str) and c.strip() != '']
-        else:
-            col_dias = []
-
-        if col_meses is not None:
-            col_meses = [c for c in col_meses if c is not None and isinstance(c, str) and c.strip() != '']
-        else:
-            col_meses = []
 
         # --- não é data: extrai dias das colunas Dias/Meses ---
         dias, origem = _obter_dias_de_colunas(linha, col_dias, col_meses)
@@ -1409,17 +1399,6 @@ def verificar_criterios(dados, codigo_indicador):
     e calcula um score de completude e um nível de prioridade.
     """
 
-    novas_colunas = []
-    for i, col in enumerate(dados.columns):
-        if col is None:
-            novas_colunas.append(f"coluna_sem_nome_{i}")
-        elif isinstance(col, float) and pd.isna(col):
-            novas_colunas.append(f"coluna_sem_nome_{i}")
-        else:
-            novas_colunas.append(str(col).strip())
-    dados.columns = novas_colunas
-    boas_praticas = definir_boas_praticas(codigo_indicador)
-    num_boas_praticas = INDICADORES[codigo_indicador]["num_boas_praticas"]
 
     resultados = []
     for idx, linha in dados.iterrows():
