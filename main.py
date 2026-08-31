@@ -697,8 +697,8 @@ def detectar_delimitador(caminho_ou_buffer, skiprows):
 def carregar_csv(caminho):
     """
     Carrega CSV com detecção automática de delimiter, skiprows e encoding.
-    CORREÇÃO: tenta múltiplos encodings (utf-8, latin-1, cp1252) e
-    sanitiza colunas sem cabeçalho (None) após carregar.
+    CORREÇÃO: tenta múltiplos encodings (utf-8, latin-1, cp1252).
+    NÃO altera nomes de colunas — preserva formato original.
     """
     import pandas as pd
 
@@ -743,20 +743,6 @@ def carregar_csv(caminho):
 
     if df is None:
         raise ValueError(f"Não foi possível ler o CSV com nenhum encoding: {caminho}")
-
-    # CORREÇÃO: remover colunas com cabeçalho None
-    df = df.loc[:, df.columns.notna()]
-
-    # CORREÇÃO: renomear colunas None ou NaN para string identificável
-    novas_colunas = []
-    for i, col in enumerate(df.columns):
-        if col is None:
-            novas_colunas.append(f"coluna_sem_nome_{i}")
-        elif isinstance(col, float) and pd.isna(col):
-            novas_colunas.append(f"coluna_sem_nome_{i}")
-        else:
-            novas_colunas.append(str(col).strip())
-    df.columns = novas_colunas
 
     return df
 
