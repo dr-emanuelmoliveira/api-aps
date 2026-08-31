@@ -125,7 +125,8 @@ def _obter_dias_de_colunas(linha, col_dias, col_meses):
         # CORREÇÃO: pular chaves None (colunas sem cabeçalho)
         if chave is None or not isinstance(chave, str):
             continue
-
+        if chave is None or not isinstance(chave, str):
+            continue
         chave_lower = chave.lower().strip()
         if chave_lower == '':
             continue
