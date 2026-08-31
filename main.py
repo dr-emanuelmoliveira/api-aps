@@ -106,6 +106,8 @@ def _obter_dias_de_colunas(linha, chave, colunas_disponiveis):
     # --- descobre col_dias e col_meses a partir da chave ---
     col_dias = None
     col_meses = None
+    if chave is None:
+        continue
     chave_lower = chave.lower()
     colunas_lower = {c.lower(): c for c in colunas_disponiveis}
 
