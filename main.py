@@ -101,60 +101,54 @@ def _obter_dias_de_colunas(linha, col_dias, col_meses):
     """
     Extrai o número de dias a partir das colunas de data da linha.
     Retorna (dias, origem) onde origem indica qual coluna foi usada.
-    CORREÇÃO: trata chaves None (colunas sem cabeçalho no CSV).
+    CORREÇÃO: apenas adiciona guarda contra chave None.
     """
     dias = None
     origem = None
 
-    # Normalizar listas de colunas — remover None e valores não-string
-    col_dias_limpo = []
-    if col_dias:
-        for c in col_dias:
-            if c is not None and isinstance(c, str) and c.strip() != '':
-                col_dias_limpo.append(c)
-
-    col_meses_limpo = []
-    if col_meses:
-        for c in col_meses:
-            if c is not None and isinstance(c, str) and c.strip() != '':
-                col_meses_limpo.append(c)
-
-    # Conjuntos lowercase para comparação rápida
-    col_dias_lower = set(c.lower() for c in col_dias_limpo)
-    col_meses_lower = set(c.lower() for c in col_meses_limpo)
-
     for chave in linha.keys():
-        # CORREÇÃO PRINCIPAL: pular chaves None (colunas sem cabeçalho)
+        # CORREÇÃO: pular chaves None (colunas sem cabeçalho no CSV)
         if chave is None or not isinstance(chave, str):
             continue
 
-        chave_lower = chave.lower().strip()
+        chave_lower = chave.lower()
 
-        # Verificar se é coluna de dias
-        if chave_lower in col_dias_lower:
-            valor = linha[chave]
-            if valor is not None and str(valor).strip() != '' and str(valor).strip().lower() != 'nan':
-                try:
-                    dias = float(str(valor).replace(',', '.'))
-                    origem = chave
+        # Verificar colunas de dias (substring matching — igual ao original)
+        if col_dias:
+            for col_busca in col_dias:
+                if col_busca is None or not isinstance(col_busca, str):
+                    continue
+                if col_busca.lower() in chave_lower:
+                    valor = linha[chave]
+                    if valor is not None and str(valor).strip() != '' and str(valor).strip().lower() != 'nan':
+                        try:
+                            dias = float(str(valor).replace(',', '.'))
+                            origem = chave
+                        except (ValueError, TypeError):
+                            pass
                     break
-                except (ValueError, TypeError):
-                    pass
 
-        # Verificar se é coluna de meses
-        if chave_lower in col_meses_lower:
-            valor = linha[chave]
-            if valor is not None and str(valor).strip() != '' and str(valor).strip().lower() != 'nan':
-                try:
-                    meses = float(str(valor).replace(',', '.'))
-                    dias = meses * 30
-                    origem = chave
+        # Verificar colunas de meses (substring matching — igual ao original)
+        if col_meses and dias is None:
+            for col_busca in col_meses:
+                if col_busca is None or not isinstance(col_busca, str):
+                    continue
+                if col_busca.lower() in chave_lower:
+                    valor = linha[chave]
+                    if valor is not None and str(valor).strip() != '' and str(valor).strip().lower() != 'nan':
+                        try:
+                            meses = float(str(valor).replace(',', '.'))
+                            dias = meses * 30
+                            origem = chave
+                        except (ValueError, TypeError):
+                            pass
                     break
-                except (ValueError, TypeError):
-                    pass
+
+        if dias is not None:
+            break
 
     return dias, origem
-
+    
 INDICADORES = {
    "C2": {
         "nome": "Desenvolvimento Infantil",
