@@ -1398,7 +1398,23 @@ def verificar_criterios(dados, codigo_indicador):
     Avalia cada paciente em relação às boas práticas do indicador
     e calcula um score de completude e um nível de prioridade.
     """
+    # CORREÇÃO: garantir que nomes de colunas sejam strings válidas
+    novas_colunas = []
+    for i, col in enumerate(dados.columns):
+        if col is None:
+            novas_colunas.append(f"coluna_sem_nome_{i}")
+        elif isinstance(col, float) and pd.isna(col):
+            novas_colunas.append(f"coluna_sem_nome_{i}")
+        else:
+            novas_colunas.append(str(col).strip())
+    dados.columns = novas_colunas
 
+    # CORREÇÃO CRÍTICA: definir boas_praticas ANTES do loop
+    # Esta linha deve existir — sem ela, o loop abaixo gera NameError
+    boas_praticas = definir_boas_praticas(codigo_indicador)
+
+    # Lista para armazenar resultados de cada linha
+    resultados = []
 
     resultados = []
     for idx, linha in dados.iterrows():
