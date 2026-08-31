@@ -97,55 +97,63 @@ def _parse_idade(val):
     except ValueError:
         return 0
 
-def _obter_dias_de_colunas(linha, chave, colunas_disponiveis):
+def _obter_dias_de_colunas(linha, col_dias, col_meses):
     """
-    Resolve automaticamente as colunas de Dias e Meses a partir de 'chave',
-    extrai o valor e retorna (dias: int | None, origem: str | None).
-    Prioriza a coluna de Dias. Faz fallback para Meses (×30).
+    Extrai o número de dias a partir das colunas de data da linha.
+    Retorna (dias, origem) onde origem indica qual coluna foi usada.
+    CORREÇÃO: trata chaves None (colunas sem cabeçalho no CSV).
     """
-    # --- descobre col_dias e col_meses a partir da chave ---
-    col_dias = None
-    col_meses = None
-    chave_lower = chave.lower()
-    colunas_lower = {c.lower(): c for c in colunas_disponiveis}
+    dias = None
+    origem = None
 
-    if 'meses' in chave_lower:
-        col_meses = chave if chave in colunas_disponiveis else colunas_lower.get(chave_lower)
-        # procura a correspondente em "dias" substituindo a palavra
-        candidato_dias = chave_lower.replace('meses', 'dias')
-        col_dias = colunas_lower.get(candidato_dias)
+    # Normalizar listas de colunas — remover None e valores não-string
+    col_dias_limpo = []
+    if col_dias:
+        for c in col_dias:
+            if c is not None and isinstance(c, str) and c.strip() != '':
+                col_dias_limpo.append(c)
 
-    elif 'dias' in chave_lower:
-        col_dias = chave if chave in colunas_disponiveis else colunas_lower.get(chave_lower)
-        # procura a correspondente em "meses" substituindo a palavra
-        candidato_meses = chave_lower.replace('dias', 'meses')
-        col_meses = colunas_lower.get(candidato_meses)
+    col_meses_limpo = []
+    if col_meses:
+        for c in col_meses:
+            if c is not None and isinstance(c, str) and c.strip() != '':
+                col_meses_limpo.append(c)
 
-    else:
-        # chave genérica — tenta usá-la como coluna de meses
-        col_meses = chave if chave in colunas_disponiveis else None
+    # Conjuntos lowercase para comparação rápida
+    col_dias_lower = set(c.lower() for c in col_dias_limpo)
+    col_meses_lower = set(c.lower() for c in col_meses_limpo)
 
-    # --- tenta extrair valor da coluna de Dias primeiro ---
-    if col_dias and col_dias in linha.index:
-        val = linha[col_dias]
-        if not pd.isna(val) and str(val).strip() != '':
-            try:
-                return int(float(str(val).replace(',', '.'))), 'dias'
-            except (ValueError, TypeError):
-                pass  # valor inválido → cai para Meses
+    for chave in linha.keys():
+        # CORREÇÃO PRINCIPAL: pular chaves None (colunas sem cabeçalho)
+        if chave is None or not isinstance(chave, str):
+            continue
 
-    # --- fallback: coluna de Meses → converte para dias ---
-    if col_meses and col_meses in linha.index:
-        val = linha[col_meses]
-        if not pd.isna(val) and str(val).strip() != '':
-            try:
-                meses = float(str(val).replace(',', '.'))
-                return int(meses * 30), 'meses'
-            except (ValueError, TypeError):
-                pass
+        chave_lower = chave.lower().strip()
 
-    return None, None
+        # Verificar se é coluna de dias
+        if chave_lower in col_dias_lower:
+            valor = linha[chave]
+            if valor is not None and str(valor).strip() != '' and str(valor).strip().lower() != 'nan':
+                try:
+                    dias = float(str(valor).replace(',', '.'))
+                    origem = chave
+                    break
+                except (ValueError, TypeError):
+                    pass
 
+        # Verificar se é coluna de meses
+        if chave_lower in col_meses_lower:
+            valor = linha[chave]
+            if valor is not None and str(valor).strip() != '' and str(valor).strip().lower() != 'nan':
+                try:
+                    meses = float(str(valor).replace(',', '.'))
+                    dias = meses * 30
+                    origem = chave
+                    break
+                except (ValueError, TypeError):
+                    pass
+
+    return dias, origem
 
 INDICADORES = {
    "C2": {
