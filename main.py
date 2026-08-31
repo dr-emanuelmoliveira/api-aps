@@ -97,56 +97,58 @@ def _parse_idade(val):
     except ValueError:
         return 0
 
-def _obter_dias_de_colunas(linha, chave, colunas_disponiveis):
+def _obter_dias_de_colunas(linha, col_dias, col_meses):
     """
-    Resolve automaticamente as colunas de Dias e Meses a partir de 'chave',
-    extrai o valor e retorna (dias: int | None, origem: str | None).
-    Prioriza a coluna de Dias. Faz fallback para Meses (×30).
+    Extrai o número de dias a partir das colunas de data da linha.
+    Retorna (dias, origem) onde origem indica qual coluna foi usada.
     """
-    # --- descobre col_dias e col_meses a partir da chave ---
-    col_dias = None
-    col_meses = None
-        if chave is None:
-             continue
-        chave_lower = chave.lower()
-    colunas_lower = {c.lower(): c for c in colunas_disponiveis}
+    dias = None
+    origem = None
 
-    if 'meses' in chave_lower:
-        col_meses = chave if chave in colunas_disponiveis else colunas_lower.get(chave_lower)
-        # procura a correspondente em "dias" substituindo a palavra
-        candidato_dias = chave_lower.replace('meses', 'dias')
-        col_dias = colunas_lower.get(candidato_dias)
+    # Normalizar listas de colunas (remover None e não-string)
+    col_dias_validas = []
+    if col_dias:
+        col_dias_valida = [c for c in col_dias if c is not None and isinstance(c, str) and c.strip() != '']
 
-    elif 'dias' in chave_lower:
-        col_dias = chave if chave in colunas_disponiveis else colunas_lower.get(chave_lower)
-        # procura a correspondente em "meses" substituindo a palavra
-        candidato_meses = chave_lower.replace('dias', 'meses')
-        col_meses = colunas_lower.get(candidato_meses)
+    col_meses_valida = []
+    if col_meses:
+        col_meses_valida = [c for c in col_meses if c is not None and isinstance(c, str) and c.strip() != '']
 
-    else:
-        # chave genérica — tenta usá-la como coluna de meses
-        col_meses = chave if chave in colunas_disponiveis else None
+    # Criar conjuntos lowercase para comparação
+    col_dias_lower = set(c.lower() for c in col_dias_valida)
+    col_meses_lower = set(c.lower() for c in col_meses_valida)
 
-    # --- tenta extrair valor da coluna de Dias primeiro ---
-    if col_dias and col_dias in linha.index:
-        val = linha[col_dias]
-        if not pd.isna(val) and str(val).strip() != '':
-            try:
-                return int(float(str(val).replace(',', '.'))), 'dias'
-            except (ValueError, TypeError):
-                pass  # valor inválido → cai para Meses
+    for chave in linha.keys():
+        # CORREÇÃO: pular chaves None (colunas sem cabeçalho no CSV)
+        if chave is None or not isinstance(chave, str):
+            continue
 
-    # --- fallback: coluna de Meses → converte para dias ---
-    if col_meses and col_meses in linha.index:
-        val = linha[col_meses]
-        if not pd.isna(val) and str(val).strip() != '':
-            try:
-                meses = float(str(val).replace(',', '.'))
-                return int(meses * 30), 'meses'
-            except (ValueError, TypeError):
-                pass
+        chave_lower = chave.lower().strip()
 
-    return None, None
+        # Verificar se esta coluna é uma das colunas de dias
+        if chave_lower in col_dias_lower:
+            valor = linha[chave]
+            if valor is not None and str(valor).strip() != '' and str(valor).strip().lower() != 'nan':
+                try:
+                    dias = float(str(valor).replace(',', '.'))
+                    origem = chave
+                    break
+                except (ValueError, TypeError):
+                    pass
+
+        # Verificar se esta coluna é uma das colunas de meses
+        if chave_lower in col_meses_lower:
+            valor = linha[chave]
+            if valor is not None and str(valor).strip() != '' and str(valor).strip().lower() != 'nan':
+                try:
+                    meses = float(str(valor).replace(',', '.'))
+                    dias = meses * 30  # converter meses para dias
+                    origem = chave
+                    break
+                except (ValueError, TypeError):
+                    pass
+
+    return dias, origem
 
 
 INDICADORES = {
@@ -694,62 +696,83 @@ def detectar_delimitador(caminho_ou_buffer, skiprows):
                 break
     return ';'
 
-def carregar_csv():
-    """Faz upload e carrega o CSV, detectando skiprows, delimitador e encoding."""
-    print("\n📁 Faça upload do arquivo .csv do e-SUS APS:")
-    uploaded = files.upload()
-    nome_arquivo = list(uploaded.keys())[0]
+def carregar_csv(caminho):
+    """
+    Carrega CSV com detecção automática de delimiter, skiprows e encoding.
+    Corrige problema de colunas sem cabeçalho (None) e encoding Latin-1.
+    """
+    import pandas as pd
+    import os
 
-    # 1. Detectar skiprows
-    skiprows = detectar_skiprows(nome_arquivo)
-
-    # 2. Detectar delimitador
-    delimitador = detectar_delimitador(nome_arquivo, skiprows)
-
-    # 3. Tentar múltiplos encodings (latin-1 primeiro para e-SUS)
-    encodings = ['latin-1', 'cp1252', 'utf-8', 'utf-8-sig', 'iso-8859-1']
-
+    # CORREÇÃO: tentar múltiplos encodings (utf-8 primeiro, depois latin-1)
+    encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
     df = None
+    encoding_usado = None
+
     for enc in encodings:
         try:
+            # Detectar delimitador lendo as primeiras linhas
+            with open(caminho, 'r', encoding=enc) as f:
+                primeiras_linhas = [next(f) for _ in range(10)]
+
+            # Detectar delimitador
+            primeira_linha = primeiras_linhas[0]
+            if primeira_linha.count(';') > primeira_linha.count(','):
+                delimitador = ';'
+            else:
+                delimitador = ','
+
+            # Detectar skiprows (pular linhas de cabeçalho extra)
+            skip = 0
+            for i, linha in enumerate(primeiras_linhas):
+                partes = linha.split(delimitador)
+                if len(partes) > 2:
+                    skip = i
+                    break
+
             df = pd.read_csv(
-                nome_arquivo,
+                caminho,
                 sep=delimitador,
-                skiprows=skiprows,
-                encoding=enc,
-                on_bad_lines='skip'
+                skiprows=skip,
+                encoding=enc
             )
-            print(f"✅ Arquivo carregado: {nome_arquivo}")
-            print(f"   Encoding: {enc}")
-            print(f"   Delimitador: '{delimitador}'")
-            print(f"   Skiprows: {skiprows}")
-            print(f"   Linhas: {len(df)} | Colunas: {len(df.columns)}")
-            return df, nome_arquivo
+            encoding_usado = enc
+            break  # sucesso, sair do loop
+
         except UnicodeDecodeError:
             continue
-        except Exception as e:
+        except StopIteration:
+            continue
+        except Exception:
             continue
 
-    # Se todos falharem, tentar com engine='python' (mais tolerante)
     if df is None:
-        try:
-            df = pd.read_csv(
-                nome_arquivo,
-                sep=delimitador,
-                skiprows=skiprows,
-                encoding='latin-1',
-                on_bad_lines='skip',
-                engine='python'
-            )
-            print(f"✅ Arquivo carregado (engine python): {nome_arquivo}")
-            print(f"   Linhas: {len(df)} | Colunas: {len(df.columns)}")
-            return df, nome_arquivo
-        except Exception as e:
-            raise ValueError(
-                f"Não foi possível carregar o CSV. Último erro: {e}"
-            )
+        raise ValueError(f"Não foi possível ler o CSV com nenhum encoding: {caminho}")
 
-    return df, nome_arquivo
+    # CORREÇÃO: sanitizar colunas None após carregar
+    # Remover colunas sem nome (Unnamed) ou com header None
+    df = df.loc[:, df.columns.notna()]
+
+    # Renomear colunas None ou NaN para string identificável
+    novas_colunas = []
+    for i, col in enumerate(df.columns):
+        if col is None:
+            novas_colunas.append(f"coluna_sem_nome_{i}")
+        elif isinstance(col, float) and pd.isna(col):
+            novas_colunas.append(f"coluna_sem_nome_{i}")
+        else:
+            novas_colunas.append(str(col).strip())
+    df.columns = novas_colunas
+
+    # Remover colunas totalmente vazias (opcional, mas recomendado)
+    colunas_vazias = []
+    for col in df.columns:
+        if df[col].isna().all():
+            colunas_vazias.append(col)
+    if colunas_vazias:
+        df = df.drop(columns=colunas_vazias)
+
+    return df
 
 # ============================================================
 # --- 5. PREPARAÇÃO DOS DADOS ---
@@ -1266,28 +1289,41 @@ def _verificar_criterio_detalhado(linha, pratica, dados, codigo_indicador):
 
         # --- não é data: extrai dias das colunas Dias/Meses ---
         dias, origem = _obter_dias_de_colunas(linha, col_dias, col_meses)
-
-        if dias is not None:
-            if dias > max_dias:
-                if origem == 'meses':
-                    meses = dias / 30
-                    return True, (f"{label} — Último registro há {meses:.1f} meses "
-                                  f"({dias} dias). Limite: {max_dias} dias. "
-                                  f"Prazo: {pratica['descricao_prazo']}"), False
-                else:
-                    return True, (f"{label} — Último registro há {dias} dias. "
-                                  f"Limite: {max_dias} dias. "
-                                  f"Prazo: {pratica['descricao_prazo']}"), False
-            else:
-                if origem == 'meses':
-                    meses = dias / 30
-                    return False, (f"{label} — Adequado ({meses:.1f} meses / "
-                                       f"{dias} dias atrás)"), False
-                else:
-                    return False, (f"{label} — Adequado ({dias} dias atrás)"), False
-
+        # CORREÇÃO: validar colunas antes de passar para _obter_dias_de_colunas
+        # Garantir que col_dias e col_meses não contenham None
+        if col_dias is not None:
+            col_dias = [c for c in col_dias if c is not None and isinstance(c, str) and c.strip() != '']
         else:
-            return True, (f"{label} — Formato inválido: '{val}'. "
+            col_dias = []
+
+        if col_meses is not None:
+            col_meses = [c for c in col_meses if c is not None and isinstance(c, str) and c.strip() != '']
+        else:
+            col_meses = []
+
+        # Chamada segura (a função _obter_dias_de_colunas também tem guarda interna)
+        dias, origem = _obter_dias_de_colunas(linha, col_dias, col_meses)
+            if dias is not None:
+                if dias > max_dias:
+                    if origem == 'meses':
+                        meses = dias / 30
+                        return True, (f"{label} — Último registro há {meses:.1f} meses "
+                                      f"({dias} dias). Limite: {max_dias} dias. "
+                                      f"Prazo: {pratica['descricao_prazo']}"), False
+                    else:
+                        return True, (f"{label} — Último registro há {dias} dias. "
+                                      f"Limite: {max_dias} dias. "
+                                      f"Prazo: {pratica['descricao_prazo']}"), False
+                else:
+                    if origem == 'meses':
+                        meses = dias / 30
+                        return False, (f"{label} — Adequado ({meses:.1f} meses / "
+                                        f"{dias} dias atrás)"), False
+                    else:
+                        return False, (f"{label} — Adequado ({dias} dias atrás)"), False
+
+            else:
+                return True, (f"{label} — Formato inválido: '{val}'. "
                           f"Prazo: {pratica['descricao_prazo']}"), False
 
 
