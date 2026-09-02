@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 API integrada para extração de telefones de CSV e envio automático de mensagens WhatsApp.
-Combina extract-telefones.py + send_messages.py em uma API FastAPI.
+Combina extract-telefones.py + send_messages.py + railway_scheduler.py em uma API FastAPI.
+Permite automação de tarefas via Railway com agendamento de execuções.
 """
 
 import os
@@ -15,11 +16,16 @@ from pydantic import BaseModel
 
 from extract_telefones import extrair_telefones_para_json
 from send_messages import WhatsAppMessageSender
+from railway_scheduler import AgendadorTarefas, TarefaAgendada, criar_rotas_scheduler
+
+# ============================================================================
+# INICIALIZAÇÃO DA API
+# ============================================================================
 
 app = FastAPI(
-    title="API WhatsApp - Busca Ativa",
-    description="Extrai telefones de CSV e envia mensagens em lote",
-    version="1.0.0",
+    title="API WhatsApp Busca Ativa - Com Scheduler",
+    description="Extrai telefones de CSV, envia mensagens em lote e agenda tarefas automáticas no Railway",
+    version="2.0.0",
 )
 
 # Permitir CORS
@@ -29,6 +35,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Inicializar scheduler global
+agendador = AgendadorTarefas()
 
 # ============================================================================
 # MODELOS PYDANTIC
@@ -62,24 +71,70 @@ class RespostaEnvio(BaseModel):
 
 
 # ============================================================================
-# ENDPOINTS
+# LIFECYCLE EVENTS
+# ============================================================================
+
+@app.on_event("startup")
+async def startup_event():
+    """Inicia o scheduler ao iniciar a API"""
+    agendador.iniciar()
+    print("🚀 API iniciada com Scheduler ativo")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Para o scheduler ao desligar a API"""
+    agendador.parar()
+    print("⏹️  API desligada")
+
+
+# ============================================================================
+# ENDPOINTS PRINCIPAIS
 # ============================================================================
 
 @app.get("/")
 async def raiz():
-    """Informações da API"""
+    """
+    Informações gerais da API.
+    
+    Retorna lista de endpoints disponíveis e status da aplicação.
+    """
     return {
-        "api": "WhatsApp Busca Ativa",
-        "versao": "1.0.0",
+        "api": "WhatsApp Busca Ativa - Com Scheduler",
+        "versao": "2.0.0",
+        "status": "ativo",
+        "timestamp": datetime.now().isoformat(),
         "endpoints": {
-            "extrair_telefones": "POST /extrair-telefones",
-            "enviar_mensagens": "POST /enviar-mensagens",
-            "status": "GET /status",
-            "listar_logs": "GET /listar-logs",
-            "listar_optouts": "GET /listar-optouts",
+            "extração": {
+                "extrair_telefones": "POST /extrair-telefones",
+            },
+            "envio": {
+                "enviar_mensagens": "POST /enviar-mensagens",
+                "enviar_simples": "POST /enviar-mensagens-simples",
+            },
+            "logs": {
+                "listar_logs": "GET /listar-logs",
+                "listar_optouts": "GET /listar-optouts",
+                "adicionar_optout": "POST /adicionar-optout",
+                "remover_optout": "DELETE /remover-optout",
+            },
+            "scheduler": {
+                "agendar_tarefa": "POST /scheduler/agendar",
+                "listar_tarefas": "GET /scheduler/tarefas",
+                "executar_agora": "POST /scheduler/executar/{tarefa_id}",
+                "historico": "GET /scheduler/historico",
+                "status": "GET /scheduler/status",
+            },
+            "status": {
+                "status_geral": "GET /status",
+            }
         }
     }
 
+
+# ============================================================================
+# ENDPOINTS DE EXTRAÇÃO
+# ============================================================================
 
 @app.post("/extrair-telefones")
 async def extrair_telefones(
@@ -94,28 +149,28 @@ async def extrair_telefones(
     Extrai telefones de um CSV e gera arquivo JSON para envio.
     
     **Parâmetros:**
-    - arquivo: CSV com dados dos pacientes
+    - arquivo: CSV com dados dos pacientes (obrigatório)
     - coluna_telefone: Nome da coluna com telefones (padrão: "Telefone Celular")
     - incluir_nome: Se deve incluir nome dos pacientes (padrão: true)
-    - pais: Código do país (padrão: "BR")
+    - pais: Código do país (padrão: "BR" para Brasil)
     - arquivo_saida: Nome do arquivo JSON gerado (padrão: "contacts.json")
     - apikey: Chave de API (header)
     
-    **Exemplo de resposta:**
+    **Formatos de telefone aceitos:**
+    - 5537984198778 (11 dígitos)
+    - 5537999999 (será preenchido para 11 dígitos)
+    - +55 37 98419-8778 (com formatação)
+    
+    **Exemplo de resposta (201):**
     ```json
     {
         "status": "sucesso",
-        "total_extraido": 45,
-        "total_valido": 42,
-        "total_invalido": 3,
+        "total_extraido": 50,
+        "total_valido": 48,
+        "total_invalido": 2,
         "arquivo_gerado": "contacts.json",
         "exemplo_contatos": [
-            {"nome": "João Silva", "telefone": "+5537984198778"},
-            {"nome": "Maria Santos", "telefone": "+5537987654321"}
-        ],
-        "invalidos_exemplo": [
-            {"valor": "123456", "motivo": "formato inválido ou incompleto"},
-            {"valor": "nan", "motivo": "formato inválido ou incompleto"}
+            {"nome": "João Silva", "telefone": "+5537984198778"}
         ]
     }
     ```
@@ -143,7 +198,7 @@ async def extrair_telefones(
         exemplo = telefones[:5] if len(telefones) > 5 else telefones
         invalidos_exemplo = invalidos[:5] if len(invalidos) > 5 else invalidos
         
-        return JSONResponse({
+        return JSONResponse(status_code=201, content={
             "status": "sucesso",
             "total_extraido": len(telefones) + len(invalidos),
             "total_valido": len(telefones),
@@ -163,6 +218,10 @@ async def extrair_telefones(
         )
 
 
+# ============================================================================
+# ENDPOINTS DE ENVIO
+# ============================================================================
+
 @app.post("/enviar-mensagens")
 async def enviar_mensagens(
     request: MensagemRequest,
@@ -172,7 +231,7 @@ async def enviar_mensagens(
     Envia mensagens em lote para todos os contatos do arquivo JSON.
     
     **Parâmetros:**
-    - template_mensagem: Template da mensagem (ex: "Olá {nome}, bem-vindo!")
+    - template_mensagem: Template da mensagem com {nome} como placeholder (obrigatório)
     - adicionar_info_optout: Se deve adicionar instruções de opt-out (padrão: true)
     - comando_optout: Comando para desinscrever (padrão: "SAIR")
     - arquivo_contatos: Arquivo JSON com contatos (padrão: "contacts.json")
@@ -188,12 +247,12 @@ async def enviar_mensagens(
     }
     ```
     
-    **Resposta:**
+    **Resposta (200):**
     ```json
     {
         "status": "concluído",
-        "total_processado": 42,
-        "sucesso": 40,
+        "total_processado": 48,
+        "sucesso": 46,
         "erros": 2,
         "ignorados": 0,
         "timestamp": "2026-09-02T14:30:00.123456",
@@ -232,7 +291,7 @@ async def enviar_mensagens(
         erros = sum(1 for e in log_data if e.get("status") == "error")
         ignorados = sum(1 for e in log_data if e.get("status") == "skipped")
         
-        return JSONResponse({
+        return JSONResponse(status_code=200, content={
             "status": "concluído",
             "total_processado": len(log_data),
             "sucesso": sucesso,
@@ -261,13 +320,23 @@ async def enviar_mensagem_simples(
     Envia uma única mensagem para um número específico.
     
     **Parâmetros:**
-    - numero: Número de telefone (formato: 55DDD9XXXXXXXX)
-    - mensagem: Texto da mensagem
+    - numero: Número de telefone (formato: 55DDD9XXXXXXXX ou +55DDD9XXXXXXXX)
+    - mensagem: Texto da mensagem (obrigatório)
     - apikey: Chave de API (header)
     
     **Exemplo:**
     ```
-    POST /enviar-mensagens-simples?numero=5537984198778&mensagem=Olá!
+    POST /enviar-mensagens-simples?numero=5537984198778&mensagem=Olá%20João!
+    ```
+    
+    **Resposta (200):**
+    ```json
+    {
+        "status": "sucesso",
+        "numero": "5537984198778",
+        "message_id": "3EB09D351EABB2B9C591CE",
+        "timestamp": "2026-09-02T14:30:00.123456"
+    }
     ```
     """
     try:
@@ -275,7 +344,7 @@ async def enviar_mensagem_simples(
         result = sender.send_message(numero, "Contato", mensagem)
         
         if result["success"]:
-            return JSONResponse({
+            return JSONResponse(status_code=200, content={
                 "status": "sucesso",
                 "numero": numero,
                 "message_id": result.get("message_id"),
@@ -296,22 +365,26 @@ async def enviar_mensagem_simples(
         )
 
 
+# ============================================================================
+# ENDPOINTS DE LOGS E OPT-OUT
+# ============================================================================
+
 @app.get("/listar-logs")
 async def listar_logs():
     """
     Retorna o conteúdo do arquivo de log de mensagens.
     
-    **Resposta:**
+    **Resposta (200):**
     ```json
     {
-        "total": 42,
+        "total": 48,
         "logs": [
             {
                 "timestamp": "2026-09-02T14:30:00.123456",
                 "nome": "João Silva",
-                "numero": "+5537984198778",
+                "numero": "5537984198778",
                 "status": "success",
-                "mensagem": "Mensagem enviada. ID: ..."
+                "mensagem": "Mensagem enviada. ID: 3EB09D351EABB2B9C591CE"
             }
         ]
     }
@@ -339,18 +412,18 @@ async def listar_logs():
 @app.get("/listar-optouts")
 async def listar_optouts():
     """
-    Retorna a lista de números com opt-out.
+    Retorna a lista de números com opt-out (desincrição).
     
-    **Resposta:**
+    **Resposta (200):**
     ```json
     {
         "total_optout": 3,
         "numeros": [
             {
-                "numero": "+5537984198778",
+                "numero": "5537984198778",
                 "nome": "João Silva",
                 "motivo": "Solicitado pelo usuário",
-                "data_optout": "2026-09-02"
+                "data_optout": "2026-09-02T14:30:00"
             }
         ]
     }
@@ -383,18 +456,27 @@ async def adicionar_optout(
     apikey: str = Header(None)
 ):
     """
-    Adiciona um número à lista de opt-out.
+    Adiciona um número à lista de opt-out (desinscrição).
     
     **Parâmetros:**
-    - numero: Número de telefone
+    - numero: Número de telefone (obrigatório)
     - nome: Nome do contato (opcional)
     - motivo: Motivo do opt-out (padrão: "Solicitado pelo usuário")
+    - apikey: Chave de API (header)
+    
+    **Resposta (200):**
+    ```json
+    {
+        "status": "sucesso",
+        "mensagem": "Número 5537984198778 adicionado à lista de opt-out"
+    }
+    ```
     """
     try:
         sender = WhatsAppMessageSender()
         sender.add_optout(numero, nome, motivo)
         
-        return JSONResponse({
+        return JSONResponse(status_code=200, content={
             "status": "sucesso",
             "mensagem": f"Número {numero} adicionado à lista de opt-out"
         })
@@ -415,13 +497,22 @@ async def remover_optout(
     Remove um número da lista de opt-out.
     
     **Parâmetros:**
-    - numero: Número de telefone
+    - numero: Número de telefone (obrigatório)
+    - apikey: Chave de API (header)
+    
+    **Resposta (200):**
+    ```json
+    {
+        "status": "sucesso",
+        "mensagem": "Número 5537984198778 removido da lista de opt-out"
+    }
+    ```
     """
     try:
         sender = WhatsAppMessageSender()
         sender.remove_optout(numero)
         
-        return JSONResponse({
+        return JSONResponse(status_code=200, content={
             "status": "sucesso",
             "mensagem": f"Número {numero} removido da lista de opt-out"
         })
@@ -433,20 +524,26 @@ async def remover_optout(
         )
 
 
+# ============================================================================
+# ENDPOINTS DE STATUS
+# ============================================================================
+
 @app.get("/status")
 async def status():
     """
-    Retorna o status geral da API.
+    Retorna o status geral da API e seus recursos.
     
-    **Resposta:**
+    **Resposta (200):**
     ```json
     {
         "api_ativa": true,
         "timestamp": "2026-09-02T14:30:00.123456",
+        "scheduler_ativo": true,
         "arquivos": {
             "contatos": true,
             "logs": true,
-            "optouts": true
+            "optouts": true,
+            "tarefas_agendadas": true
         }
     }
     ```
@@ -454,13 +551,27 @@ async def status():
     return JSONResponse({
         "api_ativa": True,
         "timestamp": datetime.now().isoformat(),
+        "scheduler_ativo": agendador.scheduler.running,
         "arquivos": {
             "contatos": os.path.exists("contacts.json"),
             "logs": os.path.exists("message_log.json"),
-            "optouts": os.path.exists("optout.json")
+            "optouts": os.path.exists("optout.json"),
+            "tarefas_agendadas": os.path.exists("tarefas_agendadas.json")
         }
     })
 
+
+# ============================================================================
+# INTEGRAÇÃO DO SCHEDULER
+# ============================================================================
+
+# Registrar rotas do scheduler
+criar_rotas_scheduler(app, agendador)
+
+
+# ============================================================================
+# INICIALIZAÇÃO
+# ============================================================================
 
 if __name__ == "__main__":
     import uvicorn
