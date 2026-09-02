@@ -1,0 +1,16 @@
+{
+  "build": {
+    "builder": "dockerfile",
+    "context": "."
+  },
+  "deploy": {
+    "startCommand": "uvicorn api:app --host 0.0.0.0 --port $PORT",
+    "healthcheckPath": "/",
+    "healthcheckInterval": 10,
+    "healthcheckTimeout": 5
+  },
+  "env": {
+    "PYTHONUNBUFFERED": "1",
+    "PORT": "8000"
+  }
+}
