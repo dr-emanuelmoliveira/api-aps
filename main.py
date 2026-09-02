@@ -97,56 +97,180 @@ def _parse_idade(val):
     except ValueError:
         return 0
 
-def _obter_dias_de_colunas(linha, chave, colunas_disponiveis):
+def _obter_dias_de_colunas(linha, col_dias=None, col_meses=None):
     """
-    Resolve automaticamente as colunas de Dias e Meses a partir de 'chave',
-    extrai o valor e retorna (dias: int | None, origem: str | None).
-    Prioriza a coluna de Dias. Faz fallback para Meses (×30).
+    Obtém a quantidade de dias relacionada a um critério.
+
+    A função aceita:
+    - uma coluna de dias;
+    - uma coluna de meses;
+    - nomes de colunas armazenados em uma lista;
+    - valores numéricos diretamente na configuração.
+
+    Retorna:
+        dias, origem
+
+    Exemplos de retorno:
+        365, "dias"
+        12, "meses"
+        None, None
     """
-    # --- descobre col_dias e col_meses a partir da chave ---
-    col_dias = None
-    col_meses = None
-    chave_lower = chave.lower()
-    colunas_lower = {c.lower(): c for c in colunas_disponiveis}
 
-    if 'meses' in chave_lower:
-        col_meses = chave if chave in colunas_disponiveis else colunas_lower.get(chave_lower)
-        # procura a correspondente em "dias" substituindo a palavra
-        candidato_dias = chave_lower.replace('meses', 'dias')
-        col_dias = colunas_lower.get(candidato_dias)
+    def valor_valido(valor):
+        """
+        Verifica se o valor não é None, NaN ou texto vazio.
+        """
+        if valor is None:
+            return False
 
-    elif 'dias' in chave_lower:
-        col_dias = chave if chave in colunas_disponiveis else colunas_lower.get(chave_lower)
-        # procura a correspondente em "meses" substituindo a palavra
-        candidato_meses = chave_lower.replace('dias', 'meses')
-        col_meses = colunas_lower.get(candidato_meses)
+        try:
+            if pd.isna(valor):
+                return False
+        except Exception:
+            pass
 
-    else:
-        # chave genérica — tenta usá-la como coluna de meses
-        col_meses = chave if chave in colunas_disponiveis else None
+        if isinstance(valor, str) and not valor.strip():
+            return False
 
-    # --- tenta extrair valor da coluna de Dias primeiro ---
-    if col_dias and col_dias in linha.index:
-        val = linha[col_dias]
-        if not pd.isna(val) and str(val).strip() != '':
-            try:
-                return int(float(str(val).replace(',', '.'))), 'dias'
-            except (ValueError, TypeError):
-                pass  # valor inválido → cai para Meses
+        return True
 
-    # --- fallback: coluna de Meses → converte para dias ---
-    if col_meses and col_meses in linha.index:
-        val = linha[col_meses]
-        if not pd.isna(val) and str(val).strip() != '':
-            try:
-                meses = float(str(val).replace(',', '.'))
-                return int(meses * 30), 'meses'
-            except (ValueError, TypeError):
-                pass
+    def obter_valor_da_linha(nome_coluna):
+        """
+        Obtém o valor de uma coluna da linha com segurança.
+        """
 
+        if not valor_valido(nome_coluna):
+            return None
+
+        # Caso a configuração tenha uma lista de possíveis colunas
+        if isinstance(nome_coluna, (list, tuple, set)):
+            for coluna in nome_coluna:
+                valor = obter_valor_da_linha(coluna)
+
+                if valor_valido(valor):
+                    return valor
+
+            return None
+
+        # Caso seja um valor numérico informado diretamente
+        if isinstance(nome_coluna, (int, float)):
+            return nome_coluna
+
+        # Nome da coluna
+        nome_coluna = str(nome_coluna).strip()
+
+        if not nome_coluna:
+            return None
+
+        # Primeiro tenta localizar pelo nome exato
+        if hasattr(linha, "index") and nome_coluna in linha.index:
+            return linha[nome_coluna]
+
+        # Depois tenta localizar ignorando maiúsculas, acentos e espaços
+        nome_normalizado = _normalizar_texto(nome_coluna)
+
+        if hasattr(linha, "index"):
+            for coluna_existente in linha.index:
+                coluna_normalizada = _normalizar_texto(
+                    str(coluna_existente)
+                )
+
+                if coluna_normalizada == nome_normalizado:
+                    return linha[coluna_existente]
+
+        return None
+
+    def converter_para_numero(valor):
+        """
+        Converte valores como '365', '12 meses' ou '365,0'
+        em número.
+        """
+
+        if not valor_valido(valor):
+            return None
+
+        if isinstance(valor, str):
+            texto = valor.strip()
+            texto = texto.replace(",", ".")
+
+            # Remove palavras comuns
+            texto = (
+                texto
+                .replace("dias", "")
+                .replace("dia", "")
+                .replace("meses", "")
+                .replace("mês", "")
+                .replace("mes", "")
+                .strip()
+            )
+        else:
+            texto = valor
+
+        try:
+            numero = float(texto)
+
+            if numero.is_integer():
+                return int(numero)
+
+            return numero
+
+        except (TypeError, ValueError):
+            return None
+
+    # Não tenta executar .lower() sobre None.
+    # Os valores somente são processados quando existem.
+    candidatos_dias = []
+
+    if valor_valido(col_dias):
+        if isinstance(col_dias, (list, tuple, set)):
+            candidatos_dias.extend(list(col_dias))
+        else:
+            candidatos_dias.append(col_dias)
+
+    candidatos_meses = []
+
+    if valor_valido(col_meses):
+        if isinstance(col_meses, (list, tuple, set)):
+            candidatos_meses.extend(list(col_meses))
+        else:
+            candidatos_meses.append(col_meses)
+
+    # Procura primeiro uma coluna de dias
+    for candidato in candidatos_dias:
+        valor = obter_valor_da_linha(candidato)
+        numero = converter_para_numero(valor)
+
+        if numero is not None:
+            return numero, "dias"
+
+    # Caso não exista dias, procura meses e converte para dias
+    for candidato in candidatos_meses:
+        valor = obter_valor_da_linha(candidato)
+        numero = converter_para_numero(valor)
+
+        if numero is not None:
+            return numero * 30, "meses"
+
+    # Também permite que a configuração traga o número diretamente
+    numero_dias = converter_para_numero(col_dias)
+
+    if numero_dias is not None and not isinstance(
+        col_dias,
+        str
+    ):
+        return numero_dias, "dias"
+
+    numero_meses = converter_para_numero(col_meses)
+
+    if numero_meses is not None and not isinstance(
+        col_meses,
+        str
+    ):
+        return numero_meses * 30, "meses"
+
+    # Nenhuma coluna foi configurada ou encontrada
     return None, None
-
-
+    
 INDICADORES = {
    "C2": {
         "nome": "Desenvolvimento Infantil",
