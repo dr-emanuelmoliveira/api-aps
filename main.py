@@ -97,72 +97,56 @@ def _parse_idade(val):
     except ValueError:
         return 0
 
-def _obter_dias_de_colunas(linha, col_dias, col_meses):
+def _obter_dias_de_colunas(linha, chave, colunas_disponiveis):
     """
-    Extrai o número de dias a partir das colunas de data da linha.
-    Retorna (dias, origem) onde origem indica qual coluna foi usada.
-    CORREÇÃO 1: trata chaves None (colunas sem cabeçalho).
-    CORREÇÃO 2: usa correspondência parcial (substring) em vez de exata,
-                para detectar colunas como "dias_ultima_consulta" ao buscar "dias".
+    Resolve automaticamente as colunas de Dias e Meses a partir de 'chave',
+    extrai o valor e retorna (dias: int | None, origem: str | None).
+    Prioriza a coluna de Dias. Faz fallback para Meses (×30).
     """
-    dias = None
-    origem = None
+    # --- descobre col_dias e col_meses a partir da chave ---
+    col_dias = None
+    col_meses = None
+    chave_lower = chave.lower()
+    colunas_lower = {c.lower(): c for c in colunas_disponiveis}
 
-    # Normalizar listas de colunas — remover None e não-string
-    col_dias_limpo = []
-    if col_dias:
-        for c in col_dias:
-            if c is not None and isinstance(c, str) and c.strip() != '':
-                col_dias_limpo.append(c.lower().strip())
+    if 'meses' in chave_lower:
+        col_meses = chave if chave in colunas_disponiveis else colunas_lower.get(chave_lower)
+        # procura a correspondente em "dias" substituindo a palavra
+        candidato_dias = chave_lower.replace('meses', 'dias')
+        col_dias = colunas_lower.get(candidato_dias)
 
-    col_meses_limpo = []
-    if col_meses:
-        for c in col_meses:
-            if c is not None and isinstance(c, str) and c.strip() != '':
-                col_meses_limpo.append(c.lower().strip())
+    elif 'dias' in chave_lower:
+        col_dias = chave if chave in colunas_disponiveis else colunas_lower.get(chave_lower)
+        # procura a correspondente em "meses" substituindo a palavra
+        candidato_meses = chave_lower.replace('dias', 'meses')
+        col_meses = colunas_lower.get(candidato_meses)
 
-    for chave in linha.keys():
-        # CORREÇÃO: pular chaves None (colunas sem cabeçalho)
-        if chave is None or not isinstance(chave, str):
-            continue
-        if chave is None or not isinstance(chave, str):
-            continue
-        chave_lower = chave.lower().strip()
-        if chave_lower == '':
-            continue
+    else:
+        # chave genérica — tenta usá-la como coluna de meses
+        col_meses = chave if chave in colunas_disponiveis else None
 
-        # Correspondência PARCIAL: verificar se a chave contém algum dos termos de col_dias
-        # ou se algum dos termos contém a chave (bidirecional)
-        for termo in col_dias_limpo:
-            if termo in chave_lower or chave_lower in termo:
-                valor = linha[chave]
-                if valor is not None and str(valor).strip() != '' and str(valor).strip().lower() != 'nan':
-                    try:
-                        dias = float(str(valor).replace(',', '.'))
-                        origem = chave
-                        break
-                    except (ValueError, TypeError):
-                        pass
-        if dias is not None:
-            break
+    # --- tenta extrair valor da coluna de Dias primeiro ---
+    if col_dias and col_dias in linha.index:
+        val = linha[col_dias]
+        if not pd.isna(val) and str(val).strip() != '':
+            try:
+                return int(float(str(val).replace(',', '.'))), 'dias'
+            except (ValueError, TypeError):
+                pass  # valor inválido → cai para Meses
 
-        # Correspondência PARCIAL para colunas de meses
-        for termo in col_meses_limpo:
-            if termo in chave_lower or chave_lower in termo:
-                valor = linha[chave]
-                if valor is not None and str(valor).strip() != '' and str(valor).strip().lower() != 'nan':
-                    try:
-                        meses = float(str(valor).replace(',', '.'))
-                        dias = meses * 30
-                        origem = chave
-                        break
-                    except (ValueError, TypeError):
-                        pass
-        if dias is not None:
-            break
+    # --- fallback: coluna de Meses → converte para dias ---
+    if col_meses and col_meses in linha.index:
+        val = linha[col_meses]
+        if not pd.isna(val) and str(val).strip() != '':
+            try:
+                meses = float(str(val).replace(',', '.'))
+                return int(meses * 30), 'meses'
+            except (ValueError, TypeError):
+                pass
 
-    return dias, origem
-    
+    return None, None
+
+
 INDICADORES = {
    "C2": {
         "nome": "Desenvolvimento Infantil",
@@ -438,11 +422,11 @@ INDICADORES = {
                                 "Data Nasc", "Nascimento"],
             "idade": ["Idade", "Idade_anos", "Idade do paciente",
                       "Idade (anos)", "Idade anos", "IDADE"],
-            "data_consulta": ["Dias desde o último atendimento médico",
-                                     "Meses desde o último atendimento médico"],
-            "data_consulta_enfermagem": ["Dias desde o último atendimento de enfermagem",
-                                         "Meses desde o último atendimento de enfermagem"],
-            "data_consulta": ["Data da última consulta"],             
+            "data_consulta": ["Data da última consulta médica",
+                              "Meses desde o último atendimento médico",
+                              "Meses desde a última consulta médica",
+                              "Meses desde o último atendimento de enfermagem",
+                              "Data da última consulta"],
             "data_antro": ["Data da última medição de peso e altura",
                            "Data da ultima medição de peso e altura",
                            "Data da última antropometria",
@@ -708,57 +692,62 @@ def detectar_delimitador(caminho_ou_buffer, skiprows):
                 break
     return ';'
 
-def carregar_csv(caminho):
-    """
-    Carrega CSV com detecção automática de delimiter, skiprows e encoding.
-    CORREÇÃO: tenta múltiplos encodings (utf-8, latin-1, cp1252).
-    NÃO altera nomes de colunas — preserva formato original.
-    """
-    import pandas as pd
+def carregar_csv():
+    """Faz upload e carrega o CSV, detectando skiprows, delimitador e encoding."""
+    print("\n📁 Faça upload do arquivo .csv do e-SUS APS:")
+    uploaded = files.upload()
+    nome_arquivo = list(uploaded.keys())[0]
 
-    # CORREÇÃO: tentar múltiplos encodings
-    encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
+    # 1. Detectar skiprows
+    skiprows = detectar_skiprows(nome_arquivo)
+
+    # 2. Detectar delimitador
+    delimitador = detectar_delimitador(nome_arquivo, skiprows)
+
+    # 3. Tentar múltiplos encodings (latin-1 primeiro para e-SUS)
+    encodings = ['latin-1', 'cp1252', 'utf-8', 'utf-8-sig', 'iso-8859-1']
+
     df = None
-
     for enc in encodings:
         try:
-            with open(caminho, 'r', encoding=enc) as f:
-                primeiras_linhas = [next(f) for _ in range(10)]
-
-            # Detectar delimitador
-            primeira_linha = primeiras_linhas[0]
-            if primeira_linha.count(';') > primeira_linha.count(','):
-                delimitador = ';'
-            else:
-                delimitador = ','
-
-            # Detectar skiprows
-            skip = 0
-            for i, linha in enumerate(primeiras_linhas):
-                partes = linha.split(delimitador)
-                if len(partes) > 2:
-                    skip = i
-                    break
-
             df = pd.read_csv(
-                caminho,
+                nome_arquivo,
                 sep=delimitador,
-                skiprows=skip,
-                encoding=enc
+                skiprows=skiprows,
+                encoding=enc,
+                on_bad_lines='skip'
             )
-            break
-
+            print(f"✅ Arquivo carregado: {nome_arquivo}")
+            print(f"   Encoding: {enc}")
+            print(f"   Delimitador: '{delimitador}'")
+            print(f"   Skiprows: {skiprows}")
+            print(f"   Linhas: {len(df)} | Colunas: {len(df.columns)}")
+            return df, nome_arquivo
         except UnicodeDecodeError:
             continue
-        except StopIteration:
-            continue
-        except Exception:
+        except Exception as e:
             continue
 
+    # Se todos falharem, tentar com engine='python' (mais tolerante)
     if df is None:
-        raise ValueError(f"Não foi possível ler o CSV com nenhum encoding: {caminho}")
+        try:
+            df = pd.read_csv(
+                nome_arquivo,
+                sep=delimitador,
+                skiprows=skiprows,
+                encoding='latin-1',
+                on_bad_lines='skip',
+                engine='python'
+            )
+            print(f"✅ Arquivo carregado (engine python): {nome_arquivo}")
+            print(f"   Linhas: {len(df)} | Colunas: {len(df.columns)}")
+            return df, nome_arquivo
+        except Exception as e:
+            raise ValueError(
+                f"Não foi possível carregar o CSV. Último erro: {e}"
+            )
 
-    return df
+    return df, nome_arquivo
 
 # ============================================================
 # --- 5. PREPARAÇÃO DOS DADOS ---
@@ -904,135 +893,6 @@ def preparar_dados(df, codigo_indicador):
 #     (com janelas temporais específicas de cada critério)
 # ============================================================
 
-def verificar_c6_idoso(row, hoje=None):
-    """
-    Verifica o indicador C6:
-    pessoa idosa sem consulta médica e/ou de enfermagem
-    nos últimos 365 dias.
-
-    Considera pessoa idosa quem possui idade igual ou superior a 60 anos.
-    """
-
-    if hoje is None:
-        hoje = pd.Timestamp.today().normalize()
-    else:
-        hoje = pd.to_datetime(hoje).normalize()
-
-    # Localiza a idade
-    coluna_idade = encontrar_coluna(
-        row,
-        [
-            "idade",
-            "anos",
-            "idade anos",
-            "faixa etaria"
-        ]
-    )
-
-    if coluna_idade is None:
-        return {
-            "aplica": False,
-            "em_dia": False,
-            "faltantes": ["Idade não identificada"],
-            "detalhamento": "Não foi possível identificar a idade do paciente."
-        }
-
-    try:
-        idade = pd.to_numeric(row[coluna_idade], errors="coerce")
-    except Exception:
-        idade = pd.NA
-
-    if pd.isna(idade) or idade < 60:
-        return {
-            "aplica": False,
-            "em_dia": True,
-            "faltantes": [],
-            "detalhamento": ""
-        }
-
-    # Nomes possíveis das colunas de consulta médica
-    coluna_medica = encontrar_coluna(
-        row,
-        [
-            "data ultima consulta medica",
-            "data última consulta médica",
-            "ultima consulta medica",
-            "última consulta médica",
-            "consulta medica",
-            "consulta médica",
-            "data consulta medica",
-            "data consulta médica"
-        ]
-    )
-
-    # Nomes possíveis das colunas de consulta de enfermagem
-    coluna_enfermagem = encontrar_coluna(
-        row,
-        [
-            "data ultima consulta enfermagem",
-            "data última consulta enfermagem",
-            "ultima consulta enfermagem",
-            "última consulta enfermagem",
-            "consulta enfermagem",
-            "data consulta enfermagem"
-        ]
-    )
-
-    data_medica = pd.NaT
-    data_enfermagem = pd.NaT
-
-    if coluna_medica is not None:
-        data_medica = _parse_data(row[coluna_medica])
-
-    if coluna_enfermagem is not None:
-        data_enfermagem = _parse_data(row[coluna_enfermagem])
-
-    limite = hoje - pd.Timedelta(days=365)
-
-    medica_em_dia = (
-        pd.notna(data_medica)
-        and data_medica >= limite
-        and data_medica <= hoje
-    )
-
-    enfermagem_em_dia = (
-        pd.notna(data_enfermagem)
-        and data_enfermagem >= limite
-        and data_enfermagem <= hoje
-    )
-
-    faltantes = []
-    detalhamento = []
-
-    if not medica_em_dia:
-        faltantes.append("Consulta médica")
-        if pd.isna(data_medica):
-            detalhamento.append("Consulta médica não registrada")
-        else:
-            detalhamento.append(
-                f"Consulta médica fora do período de 365 dias "
-                f"({data_medica.strftime('%d/%m/%Y')})"
-            )
-
-    if not enfermagem_em_dia:
-        faltantes.append("Consulta de enfermagem")
-        if pd.isna(data_enfermagem):
-            detalhamento.append("Consulta de enfermagem não registrada")
-        else:
-            detalhamento.append(
-                f"Consulta de enfermagem fora do período de 365 dias "
-                f"({data_enfermagem.strftime('%d/%m/%Y')})"
-            )
-
-    return {
-        "aplica": True,
-        "em_dia": medica_em_dia and enfermagem_em_dia,
-        "faltantes": faltantes,
-        "detalhamento": "; ".join(detalhamento),
-        "data_medica": data_medica,
-        "data_enfermagem": data_enfermagem,
-        "idade": idade
-    }
 def definir_boas_praticas(codigo_indicador):
     """
     Retorna a lista de boas práticas (critérios) do indicador.
@@ -1149,7 +1009,7 @@ def definir_boas_praticas(codigo_indicador):
         ]
     elif codigo_indicador == "C6":
         return [
-            {'label': 'Consulta médica ou de enfermagem',
+            {"label": "Consulta médica/enfermagem",
              "chave": "data_consulta", "tipo": "data_ou_meses", "max_dias": 365,
              "descricao_prazo": "Últimos 12 meses (365 dias)"},
             {"label": "Antropometria (peso e altura)",
@@ -1387,21 +1247,6 @@ def _verificar_criterio_detalhado(linha, pratica, dados, codigo_indicador):
             return True, (f"{label} — NENHUM registro encontrado. "
                             f"Prazo: {pratica['descricao_prazo']}"), False
 
-        # dentro da avaliação do critério:
-        dias_med = obter_dias(df, 'data_consulta_medica')   # pode ser None
-        dias_enf = obter_dias(df, 'data_consulta_enfermagem')  # pode ser None
-
-        if dias_med is None and dias_enf is None:
-            # SEM registro de consulta médica ou de enfermagem → não cumpre
-            cumpre = False
-            faltante = 'Nenhuma consulta médica ou de enfermagem registrada nos últimos 12 meses'
-        elif dias_med is not None and dias_med <= 365:
-            cumpre = True      # consulta médica em dia
-        elif dias_enf is not None and dias_enf <= 365:
-            cumpre = True      # consulta de enfermagem em dia
-        else:
-            cumpre = False     # ambas fora do prazo (ou só uma registrada e vencida)
-
         # --- tenta extrair como data primeiro (se vier como string de data) ---
         data = _parse_data(val)
         max_dias = pratica["max_dias"]
@@ -1416,10 +1261,7 @@ def _verificar_criterio_detalhado(linha, pratica, dados, codigo_indicador):
             else:
                 return False, (f"{label} — Adequado. Última data: "
                                f"{data.strftime('%d/%m/%Y')} ({dias} dias atrás)"), False
-        if col_dias is not None:
-            col_dias = [c for c in col_dias if c is not None and isinstance(c, str)]
-        if col_meses is not None:
-            col_meses = [c for c in col_meses if c is not None and isinstance(c, str)]
+
         # --- não é data: extrai dias das colunas Dias/Meses ---
         dias, origem = _obter_dias_de_colunas(linha, col_dias, col_meses)
 
@@ -1446,31 +1288,14 @@ def _verificar_criterio_detalhado(linha, pratica, dados, codigo_indicador):
             return True, (f"{label} — Formato inválido: '{val}'. "
                           f"Prazo: {pratica['descricao_prazo']}"), False
 
-        # Se o critério usa lógica OU (consulta médica OU enfermagem)
-        if criterio.get('logica') == 'ou':
-            col_dias = criterio.get('col_dias', [])
-            col_meses = criterio.get('col_meses', [])
-            limite = criterio.get('limite_dias', 180)
 
-            # CORREÇÃO: validar colunas None
-            if col_dias is not None:
-                col_dias = [c for c in col_dias if c is not None and isinstance(c, str)]
-            if col_meses is not None:
-                col_meses = [c for c in col_meses if c is not None and isinstance(c, str)]
 
-            dias, origem = _obter_dias_de_colunas(linha, col_dias, col_meses)
+        
 
-            if dias is None:
-                # Nenhuma coluna de consulta encontrada — dado faltante
-                return True, f"Sem data de consulta registrada", False
-            elif dias <= limite:
-                # Consulta dentro do prazo — critério cumprido
-                return False, "", False
-            else:
-                # Consulta fora do prazo — critério faltante
-                return True, f"Última consulta há {int(dias)} dias (limite: {limite})", False
+    
 
- 
+
+    
     # VACINAS MÚLTIPLAS
     elif tipo == "vacinas_multiplas":
         faltantes, ok = [], []
@@ -1576,32 +1401,8 @@ def verificar_criterios(dados, codigo_indicador):
     Avalia cada paciente em relação às boas práticas do indicador
     e calcula um score de completude e um nível de prioridade.
     """
-    # CORREÇÃO: sanitizar colunas None antes de processar
-    novas_colunas = []
-    for i, col in enumerate(dados.columns):
-        if col is None or (isinstance(col, float) and pd.isna(col)):
-            novas_colunas.append(f"coluna_sem_nome_{i}")
-        else:
-            novas_colunas.append(str(col).strip())
-    dados.columns = novas_colunas
-    
-    # CORREÇÃO: garantir que nomes de colunas sejam strings válidas
-    novas_colunas = []
-    for i, col in enumerate(dados.columns):
-        if col is None:
-            novas_colunas.append(f"coluna_sem_nome_{i}")
-        elif isinstance(col, float) and pd.isna(col):
-            novas_colunas.append(f"coluna_sem_nome_{i}")
-        else:
-            novas_colunas.append(str(col).strip())
-    dados.columns = novas_colunas
-
-    # CORREÇÃO CRÍTICA: definir boas_praticas ANTES do loop
-    # Esta linha deve existir — sem ela, o loop abaixo gera NameError
     boas_praticas = definir_boas_praticas(codigo_indicador)
-
-    # Lista para armazenar resultados de cada linha
-    resultados = []
+    num_boas_praticas = INDICADORES[codigo_indicador]["num_boas_praticas"]
 
     resultados = []
     for idx, linha in dados.iterrows():
@@ -2405,5 +2206,3 @@ def main():
 
 if __name__ == "__main__":
     resultado, previsao, busca, agenda, modelo = main()
-
-
