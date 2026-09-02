@@ -438,9 +438,9 @@ INDICADORES = {
                                 "Data Nasc", "Nascimento"],
             "idade": ["Idade", "Idade_anos", "Idade do paciente",
                       "Idade (anos)", "Idade anos", "IDADE"],
-            "data_consulta": ["Data da última consulta médica",
+            "data_consulta": ["Dias desde o último atendimento médico",
                               "Meses desde o último atendimento médico",
-                              "Meses desde a última consulta médica",
+                              "Dias desde o último atendimento de enfermagem",
                               "Meses desde o último atendimento de enfermagem",
                               "Data da última consulta"],
             "data_antro": ["Data da última medição de peso e altura",
@@ -1020,14 +1020,9 @@ def definir_boas_praticas(codigo_indicador):
         ]
     elif codigo_indicador == "C6":
         return [
-            {'label': 'Consulta médica ou de enfermagem',
-             'chave': 'dias desde o último atendimento médico',
-                    'dias desde o último atendimento de enfermagem',
-             'col_meses': 'meses desde o último atendimento médico',
-             'meses desde o último atendimento de enfermagem','max_dias': 365,
-             "descricao_prazo": "Últimos 12 meses (365 dias)"
-             'tipo': 'chave',
-             'logica': 'ou',  # basta UMA das consultas estar em dia},
+            {'label': 'Consulta médica/ enfermagem',
+             "chave": "data_consulta", "tipo": "data_ou_meses", "max_dias": 365,
+             "descricao_prazo": "Últimos 12 meses (365 dias)"},
             {"label": "Antropometria (peso e altura)",
              "chave": "data_antro", "tipo": "data", "max_dias": 365,
              "descricao_prazo": "Últimos 12 meses (365 dias)"},
