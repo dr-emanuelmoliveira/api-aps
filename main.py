@@ -637,115 +637,392 @@ def detectar_indicador(colunas_csv):
 # --- 4. CARREGAMENTO DO CSV (CORRIGIDO) ---
 # ============================================================
 
+
+def ler_conteudo_csv(caminho_ou_buffer):
+    """
+    Lê o arquivo em bytes e tenta identificar o encoding correto.
+
+    Retorna:
+        texto: conteúdo decodificado
+        encoding: encoding utilizado
+        conteudo_bytes: conteúdo original em bytes
+    """
+
+    # Caso seja um buffer em memória
+    if hasattr(caminho_ou_buffer, "read"):
+        try:
+            caminho_ou_buffer.seek(0)
+        except Exception:
+            pass
+
+        conteudo_bytes = caminho_ou_buffer.read()
+
+        if isinstance(conteudo_bytes, str):
+            conteudo_bytes = conteudo_bytes.encode(
+                "latin-1",
+                errors="ignore"
+            )
+
+        try:
+            caminho_ou_buffer.seek(0)
+        except Exception:
+            pass
+
+    # Caso seja o nome ou caminho de um arquivo
+    else:
+        with open(caminho_ou_buffer, "rb") as arquivo:
+            conteudo_bytes = arquivo.read()
+
+    if not conteudo_bytes:
+        raise ValueError("O arquivo CSV está vazio.")
+
+    # A ordem é importante:
+    # UTF-8 deve ser testado antes de latin-1,
+    # pois latin-1 aceita praticamente qualquer byte.
+    encodings = [
+        "utf-8-sig",
+        "utf-8",
+        "cp1252",
+        "iso-8859-1",
+        "latin-1"
+    ]
+
+    for encoding in encodings:
+        try:
+            texto = conteudo_bytes.decode(encoding)
+            return texto, encoding, conteudo_bytes
+        except UnicodeDecodeError:
+            continue
+
+    raise ValueError(
+        "Não foi possível identificar o encoding do arquivo CSV."
+    )
+
+# ============================================================
+# LEITURA DE UMA LINHA RESPEITANDO ASPAS
+# ============================================================
+
+def separar_linha_csv(linha, delimitador):
+    """
+    Divide uma linha do CSV respeitando campos entre aspas.
+    """
+
+    try:
+        leitor = csv.reader(
+            [linha],
+            delimiter=delimitador,
+            quotechar='"',
+            doublequote=True,
+            skipinitialspace=True
+        )
+
+        return next(leitor)
+
+    except Exception:
+        return []
+
+# ============================================================
+# DETECÇÃO DO CABEÇALHO REAL
+# ============================================================
+
 def detectar_skiprows(caminho_ou_buffer):
     """
-    Detecta automaticamente quantas linhas pular no CSV do e-SUS.
-    Procura pela linha que tem o maior número de separadores (;),
-    que corresponde ao cabeçalho real dos dados.
+    Identifica quantas linhas devem ser ignoradas antes do cabeçalho.
+
+    O método:
+    1. Lê as primeiras 100 linhas;
+    2. testa ;, vírgula e tabulação;
+    3. procura uma linha com vários campos;
+    4. verifica se as linhas seguintes possuem a mesma quantidade
+       de campos.
+
+    Retorna:
+        número de linhas que devem ser ignoradas.
     """
-    # Ler primeiras 60 linhas para análise
-    with open(caminho_ou_buffer, 'r', encoding='latin-1', errors='ignore') as f:
-        linhas = []
-        for i, linha in enumerate(f):
-            if i >= 60:
-                break
-            linhas.append((i, linha))
+
+    texto, encoding, _ = ler_conteudo_csv(caminho_ou_buffer)
+
+    linhas = texto.splitlines()
 
     if not linhas:
         return 0
 
-    # Contar separadores em cada linha e encontrar a "mudança de padrão"
-    # O cabeçalho do e-SUS é a primeira linha com muitos separadores (>= 5)
-    max_separadores = 0
-    melhor_linha = 0
+    candidatos = []
 
-    for i, linha in linhas:
-        # Contar tanto ; quanto ,
-        cnt_semi = linha.count(';')
-        cnt_comma = linha.count(',')
-        total_sep = max(cnt_semi, cnt_comma)
+    delimitadores = [";", ",", "\t"]
 
-        if total_sep > max_separadores:
-            max_separadores = total_sep
-            melhor_linha = i
+    for numero_linha, linha in enumerate(linhas[:100]):
 
-    # Se encontrou uma linha com >= 3 separadores, essa é o cabeçalho
-    if max_separadores >= 3:
-        return melhor_linha
+        if not linha.strip():
+            continue
 
-    # Fallback: procurar primeira linha com ;
-    for i, linha in linhas:
-        if ';' in linha:
-            return i
+        for delimitador in delimitadores:
+
+            campos_cabecalho = separar_linha_csv(
+                linha,
+                delimitador
+            )
+
+            # Um cabeçalho válido precisa ter pelo menos 3 campos
+            if len(campos_cabecalho) < 3:
+                continue
+
+            campos_cabecalho = [
+                str(campo).strip()
+                for campo in campos_cabecalho
+            ]
+
+            # Evita aceitar uma linha praticamente vazia
+            campos_preenchidos = sum(
+                bool(campo)
+                for campo in campos_cabecalho
+            )
+
+            if campos_preenchidos < 3:
+                continue
+
+            # Confere se as próximas linhas possuem o mesmo número
+            # de colunas
+            linhas_compativeis = 0
+            indice_proxima_linha = numero_linha + 1
+
+            while (
+                indice_proxima_linha < len(linhas)
+                and linhas_compativeis < 5
+            ):
+                proxima_linha = linhas[indice_proxima_linha]
+
+                if not proxima_linha.strip():
+                    indice_proxima_linha += 1
+                    continue
+
+                campos_dados = separar_linha_csv(
+                    proxima_linha,
+                    delimitador
+                )
+
+                if len(campos_dados) == len(campos_cabecalho):
+                    linhas_compativeis += 1
+                    indice_proxima_linha += 1
+                else:
+                    break
+
+            # Considera candidato se pelo menos duas linhas seguintes
+            # tiverem a mesma estrutura
+            if linhas_compativeis >= 2:
+
+                candidatos.append({
+                    "skiprows": numero_linha,
+                    "delimitador": delimitador,
+                    "quantidade_colunas": len(campos_cabecalho),
+                    "encoding": encoding
+                })
+
+    if candidatos:
+
+        # Prioriza o primeiro candidato encontrado.
+        # Em arquivos do e-SUS, normalmente é o cabeçalho real
+        # após as linhas iniciais de identificação.
+        candidato = candidatos[0]
+
+        print("🔎 Estrutura detectada:")
+        print(f"   Encoding: {candidato['encoding']}")
+        print(f"   Skiprows: {candidato['skiprows']}")
+        print(f"   Delimitador provável: {repr(candidato['delimitador'])}")
+        print(f"   Número de colunas: {candidato['quantidade_colunas']}")
+
+        return candidato["skiprows"]
+
+    # Fallback para CSV simples cujo cabeçalho está na primeira linha
+    for numero_linha, linha in enumerate(linhas[:100]):
+
+        campos = separar_linha_csv(linha, ";")
+
+        if len(campos) >= 3:
+            return numero_linha
 
     return 0
 
+# ============================================================
+# DETECÇÃO DO DELIMITADOR
+# ============================================================
+
 def detectar_delimitador(caminho_ou_buffer, skiprows):
-    """Detecta se o CSV usa ; ou , como separador."""
-    with open(caminho_ou_buffer, 'r', encoding='latin-1', errors='ignore') as f:
-        for i, linha in enumerate(f):
-            if i == skiprows:
-                cnt_semi = linha.count(';')
-                cnt_comma = linha.count(',')
-                return ';' if cnt_semi >= cnt_comma else ','
-            if i > skiprows + 5:
-                break
-    return ';'
+    """
+    Detecta se o CSV utiliza ;, vírgula ou tabulação.
+    """
+
+    texto, _, _ = ler_conteudo_csv(caminho_ou_buffer)
+
+    linhas = texto.splitlines()
+
+    if not linhas:
+        return ";"
+
+    if skiprows >= len(linhas):
+        return ";"
+
+    linha_cabecalho = linhas[skiprows]
+
+    delimitadores = [";", ",", "\t"]
+
+    quantidade_campos = {}
+
+    for delimitador in delimitadores:
+        campos = separar_linha_csv(
+            linha_cabecalho,
+            delimitador
+        )
+
+        quantidade_campos[delimitador] = len(campos)
+
+    # Escolhe o delimitador que produz mais campos
+    delimitador_escolhido = max(
+        quantidade_campos,
+        key=quantidade_campos.get
+    )
+
+    # Se nenhum delimitador produziu estrutura válida,
+    # utiliza o padrão do e-SUS
+    if quantidade_campos[delimitador_escolhido] < 2:
+        return ";"
+
+    return delimitador_escolhido
+
+# ============================================================
+# VALIDAÇÃO BÁSICA DO DATAFRAME
+# ============================================================
+
+def validar_dataframe(df):
+    """
+    Faz uma limpeza inicial segura no DataFrame.
+    """
+
+    if df is None:
+        raise ValueError("O DataFrame não foi carregado.")
+
+    if df.empty:
+        raise ValueError(
+            "O CSV foi lido, mas não possui registros."
+        )
+
+    # Remove colunas completamente vazias
+    df = df.dropna(
+        axis=1,
+        how="all"
+    )
+
+    # Remove espaços extras dos nomes das colunas
+    df.columns = [
+        str(coluna).strip()
+        for coluna in df.columns
+    ]
+
+    # Remove espaços extras dos valores textuais,
+    # preservando os valores como texto
+    for coluna in df.columns:
+        if df[coluna].dtype == "object":
+            df[coluna] = df[coluna].map(
+                lambda valor: (
+                    valor.strip()
+                    if isinstance(valor, str)
+                    else valor
+                )
+            )
+
+    return df
+
+# ============================================================
+# CARREGAMENTO PRINCIPAL DO CSV
+# ============================================================
 
 def carregar_csv():
-    """Faz upload e carrega o CSV, detectando skiprows, delimitador e encoding."""
+    """
+    Faz upload e carrega o CSV do e-SUS APS.
+    """
+
     print("\n📁 Faça upload do arquivo .csv do e-SUS APS:")
+
     uploaded = files.upload()
-    nome_arquivo = list(uploaded.keys())[0]
 
-    # 1. Detectar skiprows
-    skiprows = detectar_skiprows(nome_arquivo)
+    if not uploaded:
+        raise ValueError(
+            "Nenhum arquivo foi enviado."
+        )
 
-    # 2. Detectar delimitador
-    delimitador = detectar_delimitador(nome_arquivo, skiprows)
+    # Obtém o nome do primeiro arquivo enviado
+    nome_arquivo = next(iter(uploaded))
 
-    # 3. Tentar múltiplos encodings (latin-1 primeiro para e-SUS)
-    encodings = ['latin-1', 'cp1252', 'utf-8', 'utf-8-sig', 'iso-8859-1']
+    if not nome_arquivo.lower().endswith(".csv"):
+        raise ValueError(
+            "O arquivo enviado não possui extensão .csv."
+        )
 
-    df = None
-    for enc in encodings:
-        try:
-            df = pd.read_csv(
-                nome_arquivo,
-                sep=delimitador,
-                skiprows=skiprows,
-                encoding=enc,
-                on_bad_lines='skip'
-            )
-            print(f"✅ Arquivo carregado: {nome_arquivo}")
-            print(f"   Encoding: {enc}")
-            print(f"   Delimitador: '{delimitador}'")
-            print(f"   Skiprows: {skiprows}")
-            print(f"   Linhas: {len(df)} | Colunas: {len(df.columns)}")
-            return df, nome_arquivo
-        except UnicodeDecodeError:
-            continue
-        except Exception as e:
-            continue
+    # O files.upload() salva o arquivo no diretório atual
+    caminho_arquivo = nome_arquivo
 
-    # Se todos falharem, tentar com engine='python' (mais tolerante)
-    if df is None:
-        try:
-            df = pd.read_csv(
-                nome_arquivo,
-                sep=delimitador,
-                skiprows=skiprows,
-                encoding='latin-1',
-                on_bad_lines='skip',
-                engine='python'
-            )
-            print(f"✅ Arquivo carregado (engine python): {nome_arquivo}")
-            print(f"   Linhas: {len(df)} | Colunas: {len(df.columns)}")
-            return df, nome_arquivo
-        except Exception as e:
-            raise ValueError(
-                f"Não foi possível carregar o CSV. Último erro: {e}"
-            )
+    # Lê o conteúdo e identifica o encoding
+    texto, encoding, _ = ler_conteudo_csv(
+        caminho_arquivo
+    )
+
+    # Identifica a linha real do cabeçalho
+    skiprows = detectar_skiprows(
+        caminho_arquivo
+    )
+
+    # Identifica o delimitador
+    delimitador = detectar_delimitador(
+        caminho_arquivo,
+        skiprows
+    )
+
+    # Utiliza StringIO para garantir que o pandas leia
+    # exatamente o texto já decodificado
+    buffer_texto = io.StringIO(texto)
+
+    try:
+        df = pd.read_csv(
+            buffer_texto,
+            sep=delimitador,
+            skiprows=skiprows,
+            header=0,
+            quotechar='"',
+            doublequote=True,
+            dtype=str,
+            engine="python",
+            on_bad_lines="warn",
+            keep_default_na=False,
+            na_filter=False
+        )
+
+    except Exception as erro:
+        raise ValueError(
+            "\nNão foi possível carregar o CSV.\n"
+            f"Arquivo: {nome_arquivo}\n"
+            f"Encoding: {encoding}\n"
+            f"Delimitador: {repr(delimitador)}\n"
+            f"Skiprows: {skiprows}\n"
+            f"Erro: {erro}"
+        ) from erro
+
+    # Validação e limpeza inicial
+    df = validar_dataframe(df)
+
+    print("\n✅ Arquivo carregado com sucesso:")
+    print(f"   Arquivo: {nome_arquivo}")
+    print(f"   Encoding: {encoding}")
+    print(f"   Delimitador: {repr(delimitador)}")
+    print(f"   Skiprows: {skiprows}")
+    print(f"   Linhas: {len(df)}")
+    print(f"   Colunas: {len(df.columns)}")
+
+    print("\n📌 Colunas identificadas:")
+    for numero, coluna in enumerate(df.columns, start=1):
+        print(f"   {numero}. {coluna}")
+
+    print("\n📌 Primeiras linhas:")
+    display(df.head())
 
     return df, nome_arquivo
 
