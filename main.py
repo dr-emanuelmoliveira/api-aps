@@ -1317,14 +1317,31 @@ def _verificar_criterio_detalhado(linha, pratica, dados, codigo_indicador):
             return True, (f"{label} — Formato inválido: '{val}'. "
                           f"Prazo: {pratica['descricao_prazo']}"), False
 
+        # Se o critério usa lógica OU (consulta médica OU enfermagem)
+        if criterio.get('logica') == 'ou':
+            col_dias = criterio.get('col_dias', [])
+            col_meses = criterio.get('col_meses', [])
+            limite = criterio.get('limite_dias', 180)
 
+            # CORREÇÃO: validar colunas None
+            if col_dias is not None:
+                col_dias = [c for c in col_dias if c is not None and isinstance(c, str)]
+            if col_meses is not None:
+                col_meses = [c for c in col_meses if c is not None and isinstance(c, str)]
 
-        
+            dias, origem = _obter_dias_de_colunas(linha, col_dias, col_meses)
 
-    
+            if dias is None:
+                # Nenhuma coluna de consulta encontrada — dado faltante
+                return True, f"Sem data de consulta registrada", False
+            elif dias <= limite:
+                # Consulta dentro do prazo — critério cumprido
+                return False, "", False
+            else:
+                # Consulta fora do prazo — critério faltante
+                return True, f"Última consulta há {int(dias)} dias (limite: {limite})", False
 
-
-    
+ 
     # VACINAS MÚLTIPLAS
     elif tipo == "vacinas_multiplas":
         faltantes, ok = [], []
