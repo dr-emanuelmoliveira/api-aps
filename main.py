@@ -438,7 +438,7 @@ INDICADORES = {
                                 "Data Nasc", "Nascimento"],
             "idade": ["Idade", "Idade_anos", "Idade do paciente",
                       "Idade (anos)", "Idade anos", "IDADE"],
-            "data_consulta_medica": ["Dias desde o último atendimento médico",
+            "data_consulta": ["Dias desde o último atendimento médico",
                                      "Meses desde o último atendimento médico"],
             "data_consulta_enfermagem": ["Dias desde o último atendimento de enfermagem",
                                          "Meses desde o último atendimento de enfermagem"],
@@ -1341,6 +1341,33 @@ def _verificar_criterio_detalhado(linha, pratica, dados, codigo_indicador):
                 # Consulta fora do prazo — critério faltante
                 return True, f"Última consulta há {int(dias)} dias (limite: {limite})", False
 
+    # dias desde a última consulta MÉDICA (chave original)
+    val_med = linha.get('data_consulta')
+    # dias desde a última consulta de ENFERMAGEM (chave nova)
+    val_enf = linha.get('data_consulta_enfermagem')
+
+    def dias_de(valor):
+        if valor is None or valor == '' or valor == '-' or pd.isna(valor):
+            return None
+        try:
+            return float(valor)
+        except (TypeError, ValueError):
+            return None
+
+    d_med = dias_de(val_med)
+    d_enf = dias_de(val_enf)
+
+    if d_med is None and d_enf is None:
+    # sem registro de consulta médica e de enfermagem → NÃO cumpre
+        cumpre = False
+        faltou = 'Nenhuma consulta médica ou de enfermagem registrada nos últimos 12 meses'
+    elif d_med is not None and d_med <= 365:
+        cumpre = True
+    elif d_enf is not None and d_enf <= 365:
+        cumpre = True
+    else:
+        cumpre = False
+        faltou = 'Consulta médica/enfermagem fora do prazo de 365 dias'
  
     # VACINAS MÚLTIPLAS
     elif tipo == "vacinas_multiplas":
