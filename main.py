@@ -1258,6 +1258,21 @@ def _verificar_criterio_detalhado(linha, pratica, dados, codigo_indicador):
             return True, (f"{label} — NENHUM registro encontrado. "
                             f"Prazo: {pratica['descricao_prazo']}"), False
 
+        # dentro da avaliação do critério:
+        dias_med = obter_dias(df, 'data_consulta_medica')   # pode ser None
+        dias_enf = obter_dias(df, 'data_consulta_enfermagem')  # pode ser None
+
+        if dias_med is None and dias_enf is None:
+            # SEM registro de consulta médica ou de enfermagem → não cumpre
+            cumpre = False
+            faltante = 'Nenhuma consulta médica ou de enfermagem registrada nos últimos 12 meses'
+        elif dias_med is not None and dias_med <= 365:
+            cumpre = True      # consulta médica em dia
+        elif dias_enf is not None and dias_enf <= 365:
+            cumpre = True      # consulta de enfermagem em dia
+        else:
+            cumpre = False     # ambas fora do prazo (ou só uma registrada e vencida)
+
         # --- tenta extrair como data primeiro (se vier como string de data) ---
         data = _parse_data(val)
         max_dias = pratica["max_dias"]
