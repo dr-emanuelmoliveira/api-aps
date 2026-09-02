@@ -904,6 +904,135 @@ def preparar_dados(df, codigo_indicador):
 #     (com janelas temporais específicas de cada critério)
 # ============================================================
 
+def verificar_c6_idoso(row, hoje=None):
+    """
+    Verifica o indicador C6:
+    pessoa idosa sem consulta médica e/ou de enfermagem
+    nos últimos 365 dias.
+
+    Considera pessoa idosa quem possui idade igual ou superior a 60 anos.
+    """
+
+    if hoje is None:
+        hoje = pd.Timestamp.today().normalize()
+    else:
+        hoje = pd.to_datetime(hoje).normalize()
+
+    # Localiza a idade
+    coluna_idade = encontrar_coluna(
+        row,
+        [
+            "idade",
+            "anos",
+            "idade anos",
+            "faixa etaria"
+        ]
+    )
+
+    if coluna_idade is None:
+        return {
+            "aplica": False,
+            "em_dia": False,
+            "faltantes": ["Idade não identificada"],
+            "detalhamento": "Não foi possível identificar a idade do paciente."
+        }
+
+    try:
+        idade = pd.to_numeric(row[coluna_idade], errors="coerce")
+    except Exception:
+        idade = pd.NA
+
+    if pd.isna(idade) or idade < 60:
+        return {
+            "aplica": False,
+            "em_dia": True,
+            "faltantes": [],
+            "detalhamento": ""
+        }
+
+    # Nomes possíveis das colunas de consulta médica
+    coluna_medica = encontrar_coluna(
+        row,
+        [
+            "data ultima consulta medica",
+            "data última consulta médica",
+            "ultima consulta medica",
+            "última consulta médica",
+            "consulta medica",
+            "consulta médica",
+            "data consulta medica",
+            "data consulta médica"
+        ]
+    )
+
+    # Nomes possíveis das colunas de consulta de enfermagem
+    coluna_enfermagem = encontrar_coluna(
+        row,
+        [
+            "data ultima consulta enfermagem",
+            "data última consulta enfermagem",
+            "ultima consulta enfermagem",
+            "última consulta enfermagem",
+            "consulta enfermagem",
+            "data consulta enfermagem"
+        ]
+    )
+
+    data_medica = pd.NaT
+    data_enfermagem = pd.NaT
+
+    if coluna_medica is not None:
+        data_medica = _parse_data(row[coluna_medica])
+
+    if coluna_enfermagem is not None:
+        data_enfermagem = _parse_data(row[coluna_enfermagem])
+
+    limite = hoje - pd.Timedelta(days=365)
+
+    medica_em_dia = (
+        pd.notna(data_medica)
+        and data_medica >= limite
+        and data_medica <= hoje
+    )
+
+    enfermagem_em_dia = (
+        pd.notna(data_enfermagem)
+        and data_enfermagem >= limite
+        and data_enfermagem <= hoje
+    )
+
+    faltantes = []
+    detalhamento = []
+
+    if not medica_em_dia:
+        faltantes.append("Consulta médica")
+        if pd.isna(data_medica):
+            detalhamento.append("Consulta médica não registrada")
+        else:
+            detalhamento.append(
+                f"Consulta médica fora do período de 365 dias "
+                f"({data_medica.strftime('%d/%m/%Y')})"
+            )
+
+    if not enfermagem_em_dia:
+        faltantes.append("Consulta de enfermagem")
+        if pd.isna(data_enfermagem):
+            detalhamento.append("Consulta de enfermagem não registrada")
+        else:
+            detalhamento.append(
+                f"Consulta de enfermagem fora do período de 365 dias "
+                f"({data_enfermagem.strftime('%d/%m/%Y')})"
+            )
+
+    return {
+        "aplica": True,
+        "em_dia": medica_em_dia and enfermagem_em_dia,
+        "faltantes": faltantes,
+        "detalhamento": "; ".join(detalhamento),
+        "data_medica": data_medica,
+        "data_enfermagem": data_enfermagem,
+        "idade": idade
+    }
 def definir_boas_praticas(codigo_indicador):
     """
     Retorna a lista de boas práticas (critérios) do indicador.
