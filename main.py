@@ -1666,6 +1666,12 @@ def _verificar_criterio_detalhado(linha, pratica, dados, codigo_indicador):
         # --- não é data: extrai dias das colunas Dias/Meses ---
         dias, origem = _obter_dias_de_colunas(linha, col_dias, col_meses)
 
+        if dias is None:
+        # Critério sem janela temporal válida.
+        # Não interrompe a avaliação dos demais critérios.
+            return False, ("Não foi possível determinar o período do critério: "
+                           "coluna de dias ou meses não encontrada."), False
+
         if dias is not None:
             if dias > max_dias:
                 if origem == 'meses':
