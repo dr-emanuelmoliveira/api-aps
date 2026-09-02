@@ -1023,16 +1023,12 @@ def definir_boas_praticas(codigo_indicador):
             {
                 'label': 'Consulta médica ou de enfermagem',
                 'col_dias': [
-                    'dias desde última consulta médica',
-                    'dias desde última consulta de enfermagem',
-                    'dias desde atendimento médico',
-                    'dias desde atendimento enfermagem',
+                    'dias desde o último atendimento médico',
+                    'dias desde o último atendimento de enfermagem',
                 ],
                 'col_meses': [
-                    'meses desde última consulta médica',
-                    'meses desde última consulta de enfermagem',
-                    'meses desde atendimento médico',
-                    'meses desde atendimento enfermagem',
+                    'meses desde o último atendimento médico',
+                    'meses desde o último atendimento de enfermagem',
                 ],
                 'max_dias': 365,
                 'tipo': 'consulta',
