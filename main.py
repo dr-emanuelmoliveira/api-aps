@@ -1025,7 +1025,8 @@ def definir_boas_praticas(codigo_indicador):
                     'dias desde o último atendimento de enfermagem',
              'col_meses': 'meses desde o último atendimento médico',
              'meses desde o último atendimento de enfermagem','max_dias': 365,
-             'tipo': 'consulta',
+             "descricao_prazo": "Últimos 12 meses (365 dias)"
+             'tipo': 'chave',
              'logica': 'ou',  # basta UMA das consultas estar em dia},
             {"label": "Antropometria (peso e altura)",
              "chave": "data_antro", "tipo": "data", "max_dias": 365,
