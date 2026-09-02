@@ -1020,9 +1020,24 @@ def definir_boas_praticas(codigo_indicador):
         ]
     elif codigo_indicador == "C6":
         return [
-            {"label": "Consulta médica/enfermagem",
-             "chave": "data_consulta", "tipo": "data_ou_meses", "max_dias": 365,
-             "descricao_prazo": "Últimos 12 meses (365 dias)"},
+            {
+                'label': 'Consulta médica ou de enfermagem',
+                'col_dias': [
+                    'dias desde última consulta médica',
+                    'dias desde última consulta de enfermagem',
+                    'dias desde atendimento médico',
+                    'dias desde atendimento enfermagem',
+                ],
+                'col_meses': [
+                    'meses desde última consulta médica',
+                    'meses desde última consulta de enfermagem',
+                    'meses desde atendimento médico',
+                    'meses desde atendimento enfermagem',
+                ],
+                'max_dias': 365,
+                'tipo': 'consulta',
+                'logica': 'ou',  # basta UMA das consultas estar em dia
+            },
             {"label": "Antropometria (peso e altura)",
              "chave": "data_antro", "tipo": "data", "max_dias": 365,
              "descricao_prazo": "Últimos 12 meses (365 dias)"},
