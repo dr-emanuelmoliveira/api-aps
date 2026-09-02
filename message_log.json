@@ -1,0 +1,58 @@
+[
+  {
+    "timestamp": "2026-09-02T00:51:34.680056",
+    "nome": "João Silva",
+    "numero": "5537984198778",
+    "status": "success",
+    "mensagem": "Mensagem enviada. ID: 3EB0E3C3F3D4E2EABDA734"
+  },
+  {
+    "timestamp": "2026-09-02T00:51:34.896391",
+    "nome": "Maria Santos",
+    "numero": "5537999999999",
+    "status": "error",
+    "mensagem": "HTTP 400"
+  },
+  {
+    "timestamp": "2026-09-02T00:51:34.896424",
+    "nome": "Pedro Oliveira",
+    "numero": "55379999999",
+    "status": "error",
+    "mensagem": "Número inválido: 55379999999"
+  },
+  {
+    "timestamp": "2026-09-02T00:51:35.806057",
+    "nome": "Ana Costa",
+    "numero": "5537998765432",
+    "status": "success",
+    "mensagem": "Mensagem enviada. ID: 3EB01D6307D2A1F9C08081"
+  },
+  {
+    "timestamp": "2026-09-02T01:02:33.195174",
+    "nome": "João Silva",
+    "numero": "5537984198778",
+    "status": "skipped",
+    "mensagem": "Número em lista de opt-out"
+  },
+  {
+    "timestamp": "2026-09-02T01:02:33.514421",
+    "nome": "Maria Santos",
+    "numero": "5537999999999",
+    "status": "error",
+    "mensagem": "HTTP 400"
+  },
+  {
+    "timestamp": "2026-09-02T01:02:33.514466",
+    "nome": "Pedro Oliveira",
+    "numero": "55379999999",
+    "status": "error",
+    "mensagem": "Número inválido: 55379999999"
+  },
+  {
+    "timestamp": "2026-09-02T01:02:34.343572",
+    "nome": "Ana Costa",
+    "numero": "5537998765432",
+    "status": "success",
+    "mensagem": "Mensagem enviada. ID: 3EB0D02DF866B27529C3CC"
+  }
+]
